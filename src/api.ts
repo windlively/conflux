@@ -22,7 +22,7 @@ export const defaultDownloadDir = () => invoke<string>('default_download_dir');
 
 export const storageInfo = () => invoke<StorageInfo>('storage_info');
 
-/** 实际生效的窗口材质：vibrancy / mica / acrylic / blur / none */
+/** 实际生效的窗口材质：glass / vibrancy / mica / acrylic / blur / none */
 export const windowMaterial = () => invoke<string>('window_material');
 
 export const onTaskUpdate = (handler: (task: TaskView) => void) =>

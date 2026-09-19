@@ -12,7 +12,9 @@ import {
   windowMaterial,
 } from './api';
 import { FILTERS, Sidebar, type FilterKey } from './components/Sidebar';
+import { Button, TextField } from './components/md';
 import { TaskItem } from './components/TaskItem';
+import { StyleModeContext, type StyleMode } from './style';
 import type { StorageInfo, TaskView } from './types';
 
 function upsert(list: TaskView[], view: TaskView): TaskView[] {
@@ -29,12 +31,22 @@ export default function App() {
   const [sidebarOpen, setSidebarOpen] = useState(
     () => localStorage.getItem('conflux.sidebar') !== 'collapsed',
   );
+  const [styleMode, setStyleMode] = useState<StyleMode>(
+    () => (localStorage.getItem('conflux.style') as StyleMode | null) ?? 'ios',
+  );
   const [urls, setUrls] = useState('');
   const [dir, setDir] = useState('');
   const [connections, setConnections] = useState(4);
   const [message, setMessage] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [storage, setStorage] = useState<StorageInfo | null>(null);
+
+  const changeStyle = (mode: StyleMode) => {
+    // 属性同步改掉：画布类组件在渲染期读它取色，晚一拍会读到旧皮肤
+    document.documentElement.dataset.style = mode;
+    localStorage.setItem('conflux.style', mode);
+    setStyleMode(mode);
+  };
 
   useEffect(() => {
     // 折叠后红黄绿灯落在内容区上，需要让内容顶部避开它们
@@ -125,6 +137,7 @@ export default function App() {
   };
 
   return (
+    <StyleModeContext.Provider value={styleMode}>
     <div className="app">
       {/* macOS 隐藏标题栏后由这条顶部带承担跨全宽的窗口拖动，与系统标题栏位置一致 */}
       <div className="titlebar-drag" data-tauri-drag-region />
@@ -135,36 +148,35 @@ export default function App() {
         onFilter={setFilter}
         storage={storage}
         collapsed={!sidebarOpen}
+        styleMode={styleMode}
+        onStyleMode={changeStyle}
       />
 
       <main className="content">
         <div className="content-inner">
           <header className="app-header">
             <div className="form">
-              <textarea
-                className="input-url"
-                placeholder="粘贴下载链接，支持一次多行批量添加"
+              <TextField
+                type="textarea"
                 value={urls}
-                rows={2}
-                onChange={(event) => setUrls(event.target.value)}
+                onChange={setUrls}
+                placeholder="粘贴下载链接，支持一次多行批量添加"
               />
               <div className="form-row">
-                <button
-                  className="ghost icon"
+                <Button
+                  variant="icon"
                   title={sidebarOpen ? '收起侧边栏' : '展开侧边栏'}
                   onClick={() => setSidebarOpen((open) => !open)}
                 >
                   {sidebarOpen ? '⟨' : '☰'}
-                </button>
-                <input
+                </Button>
+                <TextField
                   className="input-dir"
                   value={dir}
-                  onChange={(event) => setDir(event.target.value)}
+                  onChange={setDir}
                   placeholder="保存目录"
                 />
-                <button className="ghost" onClick={handlePickDir}>
-                  选择…
-                </button>
+                <Button onClick={handlePickDir}>选择…</Button>
                 <label className="connections">
                   连接数
                   <input
@@ -175,18 +187,16 @@ export default function App() {
                     onChange={(event) => setConnections(Math.min(16, Math.max(1, Number(event.target.value) || 1)))}
                   />
                 </label>
-                <button className="primary" onClick={handleAdd} disabled={busy}>
+                <Button variant="filled" onClick={handleAdd} disabled={busy}>
                   {busy ? '添加中…' : '开始下载'}
-                </button>
+                </Button>
               </div>
             </div>
 
             {message && (
               <div className="message">
                 {message}
-                <button className="ghost" onClick={() => setMessage(null)}>
-                  关闭
-                </button>
+                <Button onClick={() => setMessage(null)}>关闭</Button>
               </div>
             )}
           </header>
@@ -212,5 +222,6 @@ export default function App() {
         </div>
       </main>
     </div>
+    </StyleModeContext.Provider>
   );
 }

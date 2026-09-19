@@ -77,8 +77,9 @@ pub fn run() {
         .expect("error while running tauri application");
 }
 
-/// 窗口材质：macOS 用系统侧边栏磨砂，Windows 依次尝试 Mica → Acrylic → Blur，
-/// 都不支持时返回 "none"，由前端退回纯色侧边栏。
+/// 窗口材质：macOS 优先液态玻璃（macOS 26 起），拿不到再退回系统侧边栏磨砂；
+/// Windows 依次尝试 Mica → Acrylic → Blur，都不支持时返回 "none"，
+/// 由前端退回纯色侧边栏。
 fn apply_window_material(app: &tauri::App) -> &'static str {
     let Some(window) = app.get_webview_window("main") else {
         return "none";
@@ -86,19 +87,24 @@ fn apply_window_material(app: &tauri::App) -> &'static str {
 
     #[cfg(target_os = "macos")]
     {
-        use window_vibrancy::{apply_vibrancy, NSVisualEffectMaterial, NSVisualEffectState};
-        match apply_vibrancy(
-            &window,
-            NSVisualEffectMaterial::Sidebar,
-            Some(NSVisualEffectState::FollowsWindowActiveState),
-            None,
-        ) {
-            Ok(()) => "vibrancy",
-            Err(err) => {
-                eprintln!("窗口磨砂不可用，退回纯色侧边栏：{err}");
-                "none"
-            }
+        if let Err(err) = apply_liquid_glass(&window) {
+            eprintln!("液态玻璃不可用（{err}），改用系统侧边栏磨砂");
+
+            use window_vibrancy::{apply_vibrancy, NSVisualEffectMaterial, NSVisualEffectState};
+            return match apply_vibrancy(
+                &window,
+                NSVisualEffectMaterial::Sidebar,
+                Some(NSVisualEffectState::FollowsWindowActiveState),
+                None,
+            ) {
+                Ok(()) => "vibrancy",
+                Err(err) => {
+                    eprintln!("窗口磨砂也不可用，退回纯色侧边栏：{err}");
+                    "none"
+                }
+            };
         }
+        "glass"
     }
 
     #[cfg(target_os = "windows")]
@@ -121,4 +127,35 @@ fn apply_window_material(app: &tauri::App) -> &'static str {
         let _ = window;
         "none"
     }
+}
+
+/// macOS 26 起系统提供 NSGlassEffectView（液态玻璃）：垫在 webview 底下，
+/// 前端把侧边栏区域留透明就能透出玻璃。系统没有这个类说明版本更低，返回错误交给调用方降级。
+#[cfg(target_os = "macos")]
+fn apply_liquid_glass(window: &tauri::WebviewWindow) -> Result<(), String> {
+    use objc2::runtime::AnyClass;
+    use objc2::MainThreadMarker;
+    use objc2_app_kit::{
+        NSAutoresizingMaskOptions, NSGlassEffectView, NSGlassEffectViewStyle, NSView,
+        NSWindowOrderingMode,
+    };
+
+    if AnyClass::get(c"NSGlassEffectView").is_none() {
+        return Err("当前系统没有 NSGlassEffectView".into());
+    }
+
+    let mtm = MainThreadMarker::new().ok_or("窗口材质必须在主线程设置")?;
+    let ns_view = window.ns_view().map_err(|err| err.to_string())?;
+    // 与 window-vibrancy 同一套拿法：直接取 tao 窗口的 NSView 当宿主
+    let host: &NSView = unsafe { &*ns_view.cast() };
+
+    let glass = NSGlassEffectView::initWithFrame(mtm.alloc(), host.bounds());
+    glass.setStyle(NSGlassEffectViewStyle::Regular);
+    glass.setAutoresizingMask(
+        NSAutoresizingMaskOptions::ViewWidthSizable
+            | NSAutoresizingMaskOptions::ViewHeightSizable,
+    );
+    host.addSubview_positioned_relativeTo(&glass, NSWindowOrderingMode::Below, None);
+
+    Ok(())
 }

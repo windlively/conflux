@@ -1,4 +1,6 @@
 import { formatSpeed } from '../format';
+import { Ripple } from './md';
+import type { StyleMode } from '../style';
 import type { StorageInfo, TaskStatus, TaskView } from '../types';
 
 export type FilterKey = 'all' | 'active' | 'paused' | 'completed' | 'failed';
@@ -31,9 +33,19 @@ interface SidebarProps {
   onFilter: (key: FilterKey) => void;
   storage: StorageInfo | null;
   collapsed: boolean;
+  styleMode: StyleMode;
+  onStyleMode: (mode: StyleMode) => void;
 }
 
-export function Sidebar({ tasks, filter, onFilter, storage, collapsed }: SidebarProps) {
+export function Sidebar({
+  tasks,
+  filter,
+  onFilter,
+  storage,
+  collapsed,
+  styleMode,
+  onStyleMode,
+}: SidebarProps) {
   const totalSpeed = tasks.reduce((sum, task) => sum + task.speedBps, 0);
 
   return (
@@ -56,6 +68,7 @@ export function Sidebar({ tasks, filter, onFilter, storage, collapsed }: Sidebar
               className={item.key === filter ? 'filter filter-active' : 'filter'}
               onClick={() => onFilter(item.key)}
             >
+              <Ripple />
               <span>{item.label}</span>
               <span className="filter-count">{count}</span>
             </button>
@@ -74,6 +87,21 @@ export function Sidebar({ tasks, filter, onFilter, storage, collapsed }: Sidebar
       )}
 
       <div className="spacer" />
+
+      <div className="style-switch" role="group" aria-label="界面风格">
+        <button
+          className={styleMode === 'ios' ? 'style-option style-option-active' : 'style-option'}
+          onClick={() => onStyleMode('ios')}
+        >
+          iOS
+        </button>
+        <button
+          className={styleMode === 'material' ? 'style-option style-option-active' : 'style-option'}
+          onClick={() => onStyleMode('material')}
+        >
+          Material
+        </button>
+      </div>
 
       <div className="sidebar-foot">
         {storage ? (

@@ -4,16 +4,14 @@ import { cancelTask, pauseTask, removeTask, resumeTask, revealInDir } from '../a
 import { formatBytes, formatDuration, formatRange, formatSpeed, percent } from '../format';
 import { CHANNEL_STATE_LABEL, TASK_STATUS_LABEL, type TaskView } from '../types';
 import { ProgressMatrix } from './ProgressMatrix';
-
-interface ConfirmButtonProps {
-  label: string;
-  confirmLabel: string;
-  className?: string;
-  onConfirm: () => void;
-}
+import { Button, SegmentBar, StatusChip, TotalBar } from './md';
 
 /** 二次确认按钮：Tauri 的 WebView 不保证支持 window.confirm，因此放在应用内实现 */
-function ConfirmButton({ label, confirmLabel, className, onConfirm }: ConfirmButtonProps) {
+function ConfirmButton({ label, confirmLabel, onConfirm }: {
+  label: string;
+  confirmLabel: string;
+  onConfirm: () => void;
+}) {
   const [armed, setArmed] = useState(false);
 
   useEffect(() => {
@@ -23,8 +21,9 @@ function ConfirmButton({ label, confirmLabel, className, onConfirm }: ConfirmBut
   }, [armed]);
 
   return (
-    <button
-      className={armed && className ? `${className} armed` : className}
+    <Button
+      danger
+      armed={armed}
       onClick={() => {
         if (armed) {
           setArmed(false);
@@ -35,7 +34,7 @@ function ConfirmButton({ label, confirmLabel, className, onConfirm }: ConfirmBut
       }}
     >
       {armed ? confirmLabel : label}
-    </button>
+    </Button>
   );
 }
 
@@ -67,10 +66,11 @@ export function TaskItem({ task, onError }: TaskItemProps) {
           <span className="task-name" title={task.savePath}>
             {task.fileName}
           </span>
-          <span className={`chip chip-${task.status}`}>
-            {task.status === 'probing' && <span className="spinner" />}
-            {TASK_STATUS_LABEL[task.status]}
-          </span>
+          <StatusChip
+            state={task.status}
+            label={TASK_STATUS_LABEL[task.status]}
+            spinner={task.status === 'probing'}
+          />
           <span className="spacer" />
           <span className="task-percent">
             {overall === null ? '总大小未知' : `${overall.toFixed(1)}%`}
@@ -87,31 +87,23 @@ export function TaskItem({ task, onError }: TaskItemProps) {
               // 状态是 pending 但数据还在，得按「有数据的空闲段」上色
               const fillState =
                 segment.state === 'pending' && segment.downloaded > 0 ? 'idle' : segment.state;
+              const pct = percent(segment.downloaded, segment.total);
               return (
-                <div
+                <SegmentBar
                   key={segment.index}
-                  className="segment"
-                  style={{ flexGrow: segment.total || 1 }}
+                  grow={segment.total || 1}
+                  ratio={pct === null ? null : pct / 100}
+                  state={fillState}
                   title={`分片 #${segment.index + 1}　${formatRange(segment.start, segment.end)}　${formatBytes(
                     segment.downloaded,
                   )} / ${formatBytes(segment.total)}`}
-                >
-                  <div
-                    className={`segment-fill segment-fill-${fillState}`}
-                    style={{ width: `${percent(segment.downloaded, segment.total) ?? 0}%` }}
-                  />
-                </div>
+                />
               );
             })}
           </div>
         ) : (
           // 单连接（或只有一个分片）时没有分片分布，退化成一条整体进度条
-          <div className="bar bar-total">
-            <div
-              className={`bar-fill bar-fill-${task.status}`}
-              style={{ width: `${overall ?? 0}%` }}
-            />
-          </div>
+          <TotalBar ratio={overall} state={task.status} />
         )}
       </div>
 
@@ -132,29 +124,22 @@ export function TaskItem({ task, onError }: TaskItemProps) {
       {task.error && <div className="task-error">{task.error}</div>}
 
       <div className="task-actions">
-        {active && <button onClick={() => run(() => pauseTask(task.id))}>暂停</button>}
-        {resumable && <button onClick={() => run(() => resumeTask(task.id))}>继续</button>}
+        {active && <Button onClick={() => run(() => pauseTask(task.id))}>暂停</Button>}
+        {resumable && <Button onClick={() => run(() => resumeTask(task.id))}>继续</Button>}
         {active && (
-          <button className="ghost" onClick={() => run(() => cancelTask(task.id, false))}>
-            取消
-          </button>
+          <Button onClick={() => run(() => cancelTask(task.id, false))}>取消</Button>
         )}
         {hasFile && (
-          <button className="ghost" onClick={() => run(() => revealInDir(task.savePath))}>
-            打开所在目录
-          </button>
+          <Button onClick={() => run(() => revealInDir(task.savePath))}>打开所在目录</Button>
         )}
         {showDetails && (
-          <button className="ghost" onClick={() => setExpanded((value) => !value)}>
+          <Button onClick={() => setExpanded((value) => !value)}>
             {expanded ? '收起详情' : '展开详情'}
-          </button>
+          </Button>
         )}
         <span className="spacer" />
-        <button className="ghost" onClick={() => run(() => removeTask(task.id, false))}>
-          移除
-        </button>
+        <Button onClick={() => run(() => removeTask(task.id, false))}>移除</Button>
         <ConfirmButton
-          className="ghost danger"
           label="删除文件"
           confirmLabel="确认删除？"
           onConfirm={() => run(() => removeTask(task.id, true))}
@@ -186,12 +171,7 @@ export function TaskItem({ task, onError }: TaskItemProps) {
                           : `#${channel.segmentIndex + 1} · ${formatRange(channel.segmentStart, channel.segmentEnd)}`}
                       </td>
                       <td>
-                        <div className="bar bar-channel">
-                          <div
-                            className={`bar-fill bar-fill-${channel.state}`}
-                            style={{ width: `${channelPercent ?? 0}%` }}
-                          />
-                        </div>
+                        <TotalBar ratio={channelPercent} state={channel.state} variant="channel" />
                         <span className="mono small">
                           {channel.segmentTotal > 0
                             ? `${formatBytes(channel.segmentDownloaded)} / ${formatBytes(channel.segmentTotal)}`
@@ -200,12 +180,12 @@ export function TaskItem({ task, onError }: TaskItemProps) {
                       </td>
                       <td className="mono">{formatSpeed(channel.speedBps)}</td>
                       <td>
-                        <span className={`chip chip-channel-${channel.state}`}>
-                          {(channel.state === 'connecting' || channel.state === 'retrying') && (
-                            <span className="spinner" />
-                          )}
-                          {CHANNEL_STATE_LABEL[channel.state]}
-                        </span>
+                        <StatusChip
+                          variant="channel"
+                          state={channel.state}
+                          label={CHANNEL_STATE_LABEL[channel.state]}
+                          spinner={channel.state === 'connecting' || channel.state === 'retrying'}
+                        />
                         {channel.retries > 0 && <span className="retry">重试 {channel.retries}</span>}
                       </td>
                     </tr>

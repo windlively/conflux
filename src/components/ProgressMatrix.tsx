@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState, type MouseEvent } from 'react';
 
 import { formatBytes } from '../format';
+import { useStyleMode } from '../style';
 import type { TaskView } from '../types';
 
 /** 矩阵固定 100 列，行数按文件大小折算，总格数控制在 200–2000 之间 */
@@ -16,6 +17,18 @@ const DONE = '#34c759';
 const ACTIVE = [0, 122, 255] as const;
 /** 已落盘但没在传输的部分：暂停、失败、重启恢复后的进度 */
 const HELD = '#8e8e93';
+
+/** canvas 不认 CSS 变量，取色只能读计算样式：皮肤换色时这里跟着变 */
+function themeColors() {
+  const styles = getComputedStyle(document.documentElement);
+  const read = (name: string, fallback: string) => styles.getPropertyValue(name).trim() || fallback;
+  const active = read('--matrix-active-rgb', ACTIVE.join(', '));
+  return {
+    done: read('--matrix-done', DONE),
+    active: [0, 1, 2].map((index) => Number(active.split(',')[index]) || 0),
+    held: read('--matrix-held', HELD),
+  };
+}
 
 interface Plan {
   rows: number;
@@ -81,12 +94,15 @@ export function ProgressMatrix({ task }: { task: TaskView }) {
   const fill = useMemo(() => fillRatios(task, plan), [plan, signature]);
   // 只有真正在下载时才把未完成的格子画成蓝色，否则蓝色会误报「还在传」
   const running = task.status === 'downloading';
+  // 皮肤切换会让 App 重渲染，这里跟着取到新的 CSS 变量并触发重画
+  const styleMode = useStyleMode();
 
   useEffect(() => {
     const canvas = canvasRef.current;
     if (!canvas) return;
 
     const draw = () => {
+      const colors = themeColors();
       const cssWidth = canvas.clientWidth || 640;
       const cssHeight = plan.rows * CELL_HEIGHT;
       const ratio = window.devicePixelRatio || 1;
@@ -114,10 +130,10 @@ export function ProgressMatrix({ task }: { task: TaskView }) {
         context.fillRect(x, y, width, height);
         if (ratioDone > 0) {
           context.fillStyle = ratioDone >= 1
-            ? DONE
+            ? colors.done
             : running
-              ? `rgba(${ACTIVE[0]}, ${ACTIVE[1]}, ${ACTIVE[2]}, ${(0.25 + 0.75 * ratioDone).toFixed(3)})`
-              : HELD;
+              ? `rgba(${colors.active[0]}, ${colors.active[1]}, ${colors.active[2]}, ${(0.25 + 0.75 * ratioDone).toFixed(3)})`
+              : colors.held;
           context.fillRect(x, y, ratioDone >= 1 ? width : Math.max(1, width * ratioDone), height);
         }
       }
@@ -129,7 +145,7 @@ export function ProgressMatrix({ task }: { task: TaskView }) {
     const observer = new ResizeObserver(draw);
     observer.observe(canvas);
     return () => observer.disconnect();
-  }, [fill, plan, signature, running]);
+  }, [fill, plan, signature, running, styleMode]);
 
   if (total <= 0 || task.status === 'probing') return null;
 

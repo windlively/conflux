@@ -28,6 +28,11 @@
   --shadow-pop: 0 8px 28px rgba(0, 0, 0, 0.12), 0 1px 3px rgba(0, 0, 0, 0.06);
   --ring: 0 0 0 3.5px rgba(0, 122, 255, 0.16);
 
+  /* 进度矩阵是 canvas，不认 var()，组件会把这三个值读出去用 */
+  --matrix-done: #34c759;
+  --matrix-active-rgb: 0, 122, 255;
+  --matrix-held: #8e8e93;
+
   /* iOS 惯用缓动：进入用减速曲线，退出用加速曲线 */
   --ease-out: cubic-bezier(0.32, 0.72, 0, 1);
   --ease: cubic-bezier(0.25, 0.1, 0.25, 1);
@@ -204,13 +209,16 @@ html:not([data-material]) .app {
   transition: margin-left var(--normal) var(--ease-out), opacity 0.2s var(--ease);
 }
 
-/* 材质之上再铺一层半透明底色：既透出桌面，又保证深色壁纸下的文字对比度 */
+/* 有系统材质时不要再盖一层厚底：只压一层薄雾保文字对比度（0.34 是底线亮度，
+   深色壁纸下靠它兜住，浅色壁纸下几乎看不出来），其余交给系统材质本身 */
+html[data-material='glass'] .sidebar,
 html[data-material='vibrancy'] .sidebar,
 html[data-material='mica'] .sidebar,
 html[data-material='acrylic'] .sidebar,
 html[data-material='blur'] .sidebar {
-  background: rgba(246, 246, 248, 0.72);
-  border-right-color: var(--hairline);
+  background: rgba(250, 250, 252, 0.34);
+  border-right: none;
+  box-shadow: inset -0.5px 0 0 rgba(60, 60, 67, 0.1);
 }
 
 /* 隐藏标题栏后，这块区域用来拖动窗口，同时给红黄绿灯留位置 */
@@ -273,7 +281,7 @@ html[data-platform='macos'] .titlebar-drag {
 .filters {
   display: flex;
   flex-direction: column;
-  gap: 1px;
+  gap: 2px;
 }
 
 .filter {
@@ -281,25 +289,34 @@ html[data-platform='macos'] .titlebar-drag {
   align-items: center;
   justify-content: space-between;
   gap: 8px;
-  height: 30px;
-  padding: 0 10px;
-  border-radius: var(--radius-sm);
+  height: 32px;
+  padding: 0 11px;
+  border-radius: 10px;
   background: transparent;
   color: var(--text);
   text-align: left;
   font-weight: 400;
+  /* 玻璃胶囊的过渡：背景、阴影一起走，切选中时不会闪 */
+  transition: background-color var(--fast) var(--ease), box-shadow var(--fast) var(--ease),
+    color var(--fast) var(--ease);
 }
 
 .filter:hover:not(:disabled) {
-  background: rgba(120, 120, 128, 0.12);
+  background: rgba(255, 255, 255, 0.42);
+  box-shadow: inset 0 0.5px 0 rgba(255, 255, 255, 0.6);
 }
 
+/* 选中项：玻璃胶囊——半透明白高光压在上半，底下一圈极淡的描边，外带一层柔影 */
 .filter-active,
 .filter-active:hover:not(:disabled) {
-  background: var(--accent);
+  background:
+    linear-gradient(rgba(255, 255, 255, 0.26), rgba(255, 255, 255, 0.04)),
+    rgba(0, 122, 255, 0.86);
   color: #fff;
   font-weight: 600;
-  box-shadow: none;
+  box-shadow:
+    0 1px 2px rgba(0, 0, 0, 0.14),
+    inset 0 0.5px 0 rgba(255, 255, 255, 0.55);
 }
 
 .filter-count {
@@ -320,8 +337,9 @@ html[data-platform='macos'] .titlebar-drag {
   font-size: 12px;
   color: var(--text-dim);
   padding: 7px 10px;
-  background: rgba(120, 120, 128, 0.1);
-  border-radius: var(--radius-sm);
+  background: rgba(255, 255, 255, 0.5);
+  border-radius: 10px;
+  box-shadow: inset 0 0.5px 0 rgba(255, 255, 255, 0.6);
   animation: fade-in var(--normal) var(--ease-out);
 }
 
@@ -826,6 +844,329 @@ html[data-platform='macos'].sidebar-hidden .content-inner {
   margin-left: 6px;
   font-size: 11px;
   color: var(--orange);
+}
+
+/* ---------- Material 3 皮肤 ---------- */
+/* 在侧边栏底部切换（localStorage 记忆）。只覆盖视觉：配色走 M3 baseline 浅色方案，
+   形状改全圆角按钮与 6px 细进度条，动效换成 M3 标准曲线，结构不动。 */
+
+html[data-style='material'] {
+  /* M3 baseline 浅色角色色 */
+  --m3-primary: #6750a4;
+  --m3-on-primary: #ffffff;
+  --m3-primary-container: #eaddff;
+  --m3-on-primary-container: #21005d;
+  --m3-secondary-container: #e8def8;
+  --m3-on-secondary-container: #1d192b;
+  --m3-surface: #fef7ff;
+  --m3-surface-container-low: #f7f2fa;
+  --m3-surface-container: #f3edf7;
+  --m3-surface-variant: #e7e0ec;
+  --m3-on-surface: #1d1b20;
+  --m3-on-surface-variant: #49454f;
+  --m3-outline: #79747e;
+  --m3-outline-variant: #cac4d0;
+  --m3-error: #b3261e;
+  --m3-error-container: #f9dedc;
+  --m3-on-error-container: #410e0b;
+  --m3-green-container: #c4eed0;
+  --m3-on-green-container: #146c2e;
+  --m3-orange-container: #ffdcc2;
+  --m3-on-orange-container: #6e3a00;
+
+  /* 映射到组件实际引用的变量 */
+  --accent: var(--m3-primary);
+  --accent-strong: #574191;
+  --accent-soft: rgba(103, 80, 164, 0.12);
+  --green: #2e7d32;
+  --orange: #b26a00;
+  --red: var(--m3-error);
+  --gray: var(--m3-outline);
+
+  --bg: var(--m3-surface-container);
+  --panel: var(--m3-surface);
+  --panel-soft: var(--m3-surface-container-low);
+  --sidebar-solid: var(--m3-surface-container);
+  --hairline: var(--m3-outline-variant);
+  --hairline-soft: var(--m3-outline-variant);
+  --text: var(--m3-on-surface);
+  --text-dim: var(--m3-on-surface-variant);
+  --text-faint: rgba(73, 69, 79, 0.62);
+  --track: var(--m3-surface-variant);
+  --fill-soft: rgba(103, 80, 164, 0.08);
+
+  --radius-sm: 8px;
+  --radius: 12px;
+  --radius-lg: 12px;
+  --shadow-card: 0 1px 2px rgba(0, 0, 0, 0.3), 0 1px 3px 1px rgba(0, 0, 0, 0.15);
+  --shadow-pop: 0 1px 2px rgba(0, 0, 0, 0.3), 0 2px 6px 2px rgba(0, 0, 0, 0.15);
+  --ring: 0 0 0 3px rgba(103, 80, 164, 0.16);
+
+  --matrix-done: #2e7d32;
+  --matrix-active-rgb: 103, 80, 164;
+  --matrix-held: #79747e;
+
+  /* M3 标准曲线，比 iOS 的减速曲线更短促 */
+  --ease-out: cubic-bezier(0.2, 0, 0, 1);
+  --ease: cubic-bezier(0.2, 0, 0, 1);
+  --fast: 0.14s;
+  --normal: 0.24s;
+
+  /* 交给 @material/web 官方组件的系统色与字体令牌 */
+  --md-ref-typeface-plain: 'Roboto', -apple-system, 'PingFang SC', sans-serif;
+  --md-ref-typeface-brand: 'Roboto', -apple-system, 'PingFang SC', sans-serif;
+  --md-sys-color-primary: var(--m3-primary);
+  --md-sys-color-on-primary: var(--m3-on-primary);
+  --md-sys-color-surface: var(--m3-surface);
+  --md-sys-color-on-surface: var(--m3-on-surface);
+  --md-sys-color-surface-variant: var(--m3-surface-variant);
+  --md-sys-color-on-surface-variant: var(--m3-on-surface-variant);
+  --md-sys-color-outline: var(--m3-outline);
+  --md-sys-color-error: var(--m3-error);
+
+  font-family: 'Roboto', 'Roboto Flex', -apple-system, BlinkMacSystemFont, 'Noto Sans SC',
+    'PingFang SC', 'Microsoft YaHei', sans-serif;
+}
+
+/* @material/web 官方组件落在我们的布局里需要一点尺寸约束 */
+html[data-style='material'] md-linear-progress,
+html[data-style='material'] md-outlined-text-field {
+  display: block;
+  width: 100%;
+}
+
+html[data-style='material'] md-filled-button,
+html[data-style='material'] md-text-button,
+html[data-style='material'] md-icon-button,
+html[data-style='material'] md-assist-chip {
+  flex: 0 0 auto;
+}
+
+/* 分段的底色与圆角交给 md-linear-progress 自己画 */
+html[data-style='material'] .segment {
+  background: transparent;
+}
+
+/* 涟漪要裁在胶囊形状里 */
+html[data-style='material'] .filter {
+  position: relative;
+  overflow: hidden;
+}
+
+/* 按钮、状态徽标、进度条在 Material 皮肤下由 @material/web 官方组件渲染，
+   样式随组件自带（填充／文字两档、assist chip、linear progress），这里不再接管。
+   下面只保留皮肤切换开关这类没有官方对应物的原生控件样式。 */
+html[data-style='material'] button {
+  height: 40px;
+  padding: 0 24px;
+  border-radius: 999px;
+  font-weight: 500;
+  background: transparent;
+  color: var(--m3-primary);
+}
+
+html[data-style='material'] button:hover:not(:disabled) {
+  background: rgba(103, 80, 164, 0.08);
+}
+
+html[data-style='material'] button:active:not(:disabled) {
+  transform: none;
+  background: rgba(103, 80, 164, 0.12);
+}
+
+/* 输入框：M3 描边文本框（4dp 圆角，聚焦时描边加粗成主色） */
+html[data-style='material'] input,
+html[data-style='material'] textarea {
+  height: 40px;
+  padding: 0 14px;
+  border-radius: 4px;
+  border: 1px solid var(--m3-outline);
+  background: var(--m3-surface);
+}
+
+html[data-style='material'] textarea {
+  padding: 10px 14px;
+}
+
+html[data-style='material'] input:focus,
+html[data-style='material'] textarea:focus {
+  border-color: var(--m3-primary);
+  box-shadow: inset 0 0 0 1px var(--m3-primary);
+}
+
+html[data-style='material'] :focus-visible {
+  outline: 2px solid var(--m3-primary);
+  outline-offset: 2px;
+}
+
+/* 侧边栏＝M3 导航抽屉：无分隔线，选中项是圆角药丸 */
+html[data-style='material'] .sidebar {
+  width: 240px;
+  flex: 0 0 240px;
+  padding: 16px 12px 14px;
+  gap: 16px;
+  border-right: none;
+}
+
+html[data-style='material'] .sidebar-collapsed {
+  margin-left: -240px;
+}
+
+/* M3 的导航抽屉本来是不透明表面，玻璃/磨砂只做很淡的一层，
+   底色留厚一点，深色壁纸下深色文字才不会糊掉 */
+html[data-style='material'][data-material='vibrancy'] .sidebar,
+html[data-style='material'][data-material='mica'] .sidebar,
+html[data-style='material'][data-material='acrylic'] .sidebar,
+html[data-style='material'][data-material='blur'] .sidebar {
+  background: rgba(243, 237, 247, 0.62);
+}
+
+html[data-style='material'][data-material='glass'] .sidebar {
+  background: rgba(243, 237, 247, 0.62);
+}
+
+html[data-style='material'] .brand-name {
+  font-size: 22px;
+  font-weight: 400;
+  letter-spacing: 0;
+}
+
+html[data-style='material'] .brand-en {
+  font-weight: 500;
+}
+
+html[data-style='material'] .filters {
+  gap: 4px;
+}
+
+html[data-style='material'] .filter {
+  height: 56px;
+  padding: 0 20px;
+  border-radius: 999px;
+  font-weight: 500;
+  color: var(--m3-on-surface-variant);
+}
+
+html[data-style='material'] .filter:hover:not(:disabled) {
+  background: rgba(29, 27, 32, 0.06);
+}
+
+html[data-style='material'] .filter-active,
+html[data-style='material'] .filter-active:hover:not(:disabled) {
+  background: var(--m3-secondary-container);
+  color: var(--m3-on-secondary-container);
+}
+
+html[data-style='material'] .filter-active .filter-count {
+  color: var(--m3-on-secondary-container);
+}
+
+html[data-style='material'] .sidebar-speed {
+  height: 40px;
+  padding: 0 14px;
+  border-radius: 12px;
+  background: var(--m3-surface-variant);
+}
+
+html[data-style='material'] .sidebar-foot {
+  border-top-color: var(--m3-outline-variant);
+}
+
+/* 卡片：M3 elevated card —— 表面色 + 一级阴影，悬停不再位移 */
+html[data-style='material'] .app-header,
+html[data-style='material'] .task {
+  background: var(--m3-surface);
+  border-radius: 12px;
+}
+
+html[data-style='material'] .task {
+  padding: 16px;
+}
+
+html[data-style='material'] .task:hover {
+  transform: none;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.3), 0 2px 6px 2px rgba(0, 0, 0, 0.15);
+}
+
+html[data-style='material'] .task-name {
+  font-size: 16px;
+  font-weight: 500;
+}
+
+/* 进度条：Material 皮肤下每段与整体条都是 md-linear-progress，底色和高度由组件画 */
+html[data-style='material'] .segments {
+  height: 6px;
+  gap: 3px;
+}
+
+html[data-style='material'] .message {
+  border-radius: 8px;
+  background: var(--m3-error-container);
+  color: var(--m3-on-error-container);
+}
+
+html[data-style='material'] .empty-glyph {
+  color: var(--m3-on-primary-container);
+  background: var(--m3-primary-container);
+}
+
+/* ---------- 皮肤切换开关 ---------- */
+
+.style-switch {
+  display: flex;
+  gap: 2px;
+  padding: 2px;
+  background: rgba(120, 120, 128, 0.12);
+  border-radius: var(--radius-sm);
+}
+
+.style-option {
+  flex: 1;
+  height: 26px;
+  padding: 0;
+  font-size: 12px;
+  font-weight: 500;
+  border-radius: 7px;
+  background: transparent;
+  color: var(--text-dim);
+}
+
+.style-option:hover:not(:disabled) {
+  background: transparent;
+  color: var(--text);
+}
+
+.style-option-active,
+.style-option-active:hover:not(:disabled) {
+  background: var(--panel);
+  color: var(--text);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.12);
+}
+
+html[data-style='material'] .style-switch {
+  padding: 0;
+  gap: 0;
+  background: transparent;
+  border: 1px solid var(--m3-outline);
+  border-radius: 999px;
+  overflow: hidden;
+}
+
+html[data-style='material'] .style-option {
+  height: 32px;
+  border-radius: 0;
+  color: var(--m3-on-surface-variant);
+}
+
+html[data-style='material'] .style-option + .style-option {
+  border-left: 1px solid var(--m3-outline);
+}
+
+html[data-style='material'] .style-option-active,
+html[data-style='material'] .style-option-active:hover:not(:disabled) {
+  background: var(--m3-secondary-container);
+  color: var(--m3-on-secondary-container);
+  box-shadow: none;
 }
 
 /* ---------- 动效 ---------- */
