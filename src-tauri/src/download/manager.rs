@@ -1,14 +1,18 @@
 use std::collections::VecDeque;
 use std::path::PathBuf;
-use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
+use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 
 use tokio_util::sync::CancellationToken;
+use uuid::Uuid;
 
-use super::engine::{self, Outcome, ProgressSink};
+use crate::store::Store;
+
+use super::engine::{self, Outcome, ProgressFlush, ProgressSink};
 use super::probe;
 use super::task::{StopKind, Task};
 use super::types::*;
+use super::persist;
 
 /// 同时下载的任务数上限，其余任务排队等待
 const MAX_CONCURRENT_TASKS: usize = 3;
@@ -25,23 +29,56 @@ pub struct DownloadManager {
     tasks: Mutex<Vec<Arc<Task>>>,
     waiting: Mutex<VecDeque<String>>,
     active: AtomicUsize,
-    seq: AtomicU64,
     client: reqwest::Client,
     sink: EventSink,
     default_dir: PathBuf,
+    /// 为 None 时不做任何持久化，下载功能照常
+    store: Option<Arc<Store>>,
 }
 
 impl DownloadManager {
-    pub fn new(sink: EventSink, default_dir: PathBuf) -> Arc<Self> {
-        Arc::new(DownloadManager {
+    pub fn new(
+        sink: EventSink,
+        default_dir: PathBuf,
+        store: Option<Arc<Store>>,
+    ) -> Arc<Self> {
+        let manager = Arc::new(DownloadManager {
             tasks: Mutex::new(Vec::new()),
             waiting: Mutex::new(VecDeque::new()),
             active: AtomicUsize::new(0),
-            seq: AtomicU64::new(1),
             client: probe::client(),
             sink,
-            default_dir,
-        })
+            default_dir: default_dir.clone(),
+            store,
+        });
+
+        if let Some(store) = &manager.store {
+            // 恢复的任务保持原有进度但不自动开跑，由用户决定何时继续
+            let restored = persist::restore(store, &default_dir);
+            if !restored.is_empty() {
+                println!("已恢复 {} 个已保存的任务", restored.len());
+                manager.tasks.lock().unwrap().extend(restored);
+            }
+        }
+        manager
+    }
+
+    fn persist(&self, task: &Task) {
+        let Some(store) = &self.store else {
+            return;
+        };
+        if let Err(err) = persist::save_all(store, task) {
+            eprintln!("任务 {} 落库失败：{err}", task.id);
+        }
+    }
+
+    fn forget(&self, id: &str) {
+        let Some(store) = &self.store else {
+            return;
+        };
+        if let Err(err) = store.delete_task(id) {
+            eprintln!("任务 {id} 从数据库删除失败：{err}");
+        }
     }
 
     pub fn default_dir(&self) -> String {
@@ -95,7 +132,7 @@ impl DownloadManager {
         };
         std::fs::create_dir_all(&dir).map_err(|e| format!("无法创建下载目录：{e}"))?;
 
-        let id = format!("t{}", self.seq.fetch_add(1, Ordering::SeqCst));
+        let id = Uuid::new_v4().to_string();
         let task = Arc::new(Task::new(
             id.clone(),
             url,
@@ -104,6 +141,7 @@ impl DownloadManager {
         ));
         self.tasks.lock().unwrap().push(task.clone());
         self.emit(&task);
+        self.persist(&task);
         self.start(&id)?;
         Ok(id)
     }
@@ -158,11 +196,23 @@ impl DownloadManager {
             let sink = self.sink.clone();
             Arc::new(move |view| sink(ManagerEvent::Update(view)))
         };
+        // 引擎负责在 fsync 之后回调它，把任务行与分片进度写进数据库
+        let flush: Option<ProgressFlush> = self.store.as_ref().map(|store| {
+            let store = Arc::clone(store);
+            let task = Arc::clone(&task);
+            let flush: ProgressFlush = Arc::new(move || {
+                if let Err(err) = persist::save_all(&store, &task) {
+                    eprintln!("任务 {} 进度落库失败：{err}", task.id);
+                }
+            });
+            flush
+        });
         let outcome = engine::run(
             task.clone(),
             self.client.clone(),
             engine_sink,
             cancel,
+            flush,
         )
         .await;
 
@@ -181,6 +231,7 @@ impl DownloadManager {
         if removed {
             self.remove_from_waiting(&task.id);
             self.tasks.lock().unwrap().retain(|item| item.id != task.id);
+            self.forget(&task.id);
             if delete_file {
                 let _ = std::fs::remove_file(super::path::part_path(&path_to_delete));
                 if path_to_delete.exists() {
@@ -251,6 +302,10 @@ impl DownloadManager {
             }
         }
         self.emit(&task);
+        // 运行中的任务由引擎收尾时落库；排队中的任务在这里直接记下暂停状态
+        if !task.is_running() {
+            self.persist(&task);
+        }
         Ok(())
     }
 
@@ -299,6 +354,9 @@ impl DownloadManager {
             }
         }
         self.emit(&task);
+        if !task.is_running() {
+            self.persist(&task);
+        }
         Ok(())
     }
 
@@ -318,6 +376,7 @@ impl DownloadManager {
 
         self.remove_from_waiting(id);
         self.tasks.lock().unwrap().retain(|item| item.id != id);
+        self.forget(id);
         if delete_file {
             let save_path = task.inner.lock().unwrap().save_path.clone();
             let _ = std::fs::remove_file(super::path::part_path(&save_path));

@@ -3,6 +3,7 @@ import { useEffect, useState } from 'react';
 import { cancelTask, pauseTask, removeTask, resumeTask, revealInDir } from '../api';
 import { formatBytes, formatDuration, formatRange, formatSpeed, percent } from '../format';
 import { CHANNEL_STATE_LABEL, TASK_STATUS_LABEL, type TaskView } from '../types';
+import { ProgressMatrix } from './ProgressMatrix';
 
 interface ConfirmButtonProps {
   label: string;
@@ -23,7 +24,7 @@ function ConfirmButton({ label, confirmLabel, className, onConfirm }: ConfirmBut
 
   return (
     <button
-      className={className}
+      className={armed && className ? `${className} armed` : className}
       onClick={() => {
         if (armed) {
           setArmed(false);
@@ -54,7 +55,10 @@ export function TaskItem({ task, onError }: TaskItemProps) {
   const active = task.status === 'downloading' || task.status === 'probing' || task.status === 'queued';
   const resumable = task.status === 'paused' || task.status === 'failed' || task.status === 'cancelled';
   const hasFile = task.status === 'completed' || task.status === 'paused' || task.status === 'cancelled';
-  const showDetails = task.channels.length > 0;
+  const hasChannels = task.channels.some((channel) => channel.segmentIndex !== null);
+  // 矩阵按已有进度算，历史任务也能看；只探测出总大小时展开才有内容
+  const hasMatrix = task.totalBytes > 0 && task.status !== 'probing';
+  const showDetails = hasChannels || hasMatrix;
 
   return (
     <li className="task">
@@ -63,7 +67,10 @@ export function TaskItem({ task, onError }: TaskItemProps) {
           <span className="task-name" title={task.savePath}>
             {task.fileName}
           </span>
-          <span className={`chip chip-${task.status}`}>{TASK_STATUS_LABEL[task.status]}</span>
+          <span className={`chip chip-${task.status}`}>
+            {task.status === 'probing' && <span className="spinner" />}
+            {TASK_STATUS_LABEL[task.status]}
+          </span>
           <span className="spacer" />
           <span className="task-percent">
             {overall === null ? '总大小未知' : `${overall.toFixed(1)}%`}
@@ -72,11 +79,40 @@ export function TaskItem({ task, onError }: TaskItemProps) {
         <span className="task-host">{task.url}</span>
       </div>
 
-      <div className="bar bar-total">
-        <div
-          className={`bar-fill bar-fill-${task.status}`}
-          style={{ width: `${overall ?? 0}%` }}
-        />
+      <div className="progress-block">
+        {task.segments.length > 1 ? (
+          <div className="segments">
+            {task.segments.map((segment) => {
+              // 暂停、失败、重启恢复后，未完成的分片已经没有通道在跑，
+              // 状态是 pending 但数据还在，得按「有数据的空闲段」上色
+              const fillState =
+                segment.state === 'pending' && segment.downloaded > 0 ? 'idle' : segment.state;
+              return (
+                <div
+                  key={segment.index}
+                  className="segment"
+                  style={{ flexGrow: segment.total || 1 }}
+                  title={`分片 #${segment.index + 1}　${formatRange(segment.start, segment.end)}　${formatBytes(
+                    segment.downloaded,
+                  )} / ${formatBytes(segment.total)}`}
+                >
+                  <div
+                    className={`segment-fill segment-fill-${fillState}`}
+                    style={{ width: `${percent(segment.downloaded, segment.total) ?? 0}%` }}
+                  />
+                </div>
+              );
+            })}
+          </div>
+        ) : (
+          // 单连接（或只有一个分片）时没有分片分布，退化成一条整体进度条
+          <div className="bar bar-total">
+            <div
+              className={`bar-fill bar-fill-${task.status}`}
+              style={{ width: `${overall ?? 0}%` }}
+            />
+          </div>
+        )}
       </div>
 
       <div className="task-stats">
@@ -110,7 +146,7 @@ export function TaskItem({ task, onError }: TaskItemProps) {
         )}
         {showDetails && (
           <button className="ghost" onClick={() => setExpanded((value) => !value)}>
-            {expanded ? '收起详情' : `展开详情（${task.channels.length} 通道）`}
+            {expanded ? '收起详情' : '展开详情'}
           </button>
         )}
         <span className="spacer" />
@@ -127,69 +163,59 @@ export function TaskItem({ task, onError }: TaskItemProps) {
 
       {expanded && showDetails && (
         <div className="details">
-          <table className="channels">
-            <thead>
-              <tr>
-                <th>通道</th>
-                <th>当前分片</th>
-                <th className="col-progress">分片进度</th>
-                <th>速度</th>
-                <th>状态</th>
-              </tr>
-            </thead>
-            <tbody>
-              {task.channels.map((channel) => {
-                const channelPercent = percent(channel.segmentDownloaded, channel.segmentTotal);
-                return (
-                  <tr key={channel.id}>
-                    <td className="mono">#{channel.id + 1}</td>
-                    <td className="mono">
-                      {channel.segmentIndex === null
-                        ? '--'
-                        : `#${channel.segmentIndex + 1} · ${formatRange(channel.segmentStart, channel.segmentEnd)}`}
-                    </td>
-                    <td>
-                      <div className="bar bar-channel">
-                        <div
-                          className={`bar-fill bar-fill-${channel.state}`}
-                          style={{ width: `${channelPercent ?? 0}%` }}
-                        />
-                      </div>
-                      <span className="mono small">
-                        {channel.segmentTotal > 0
-                          ? `${formatBytes(channel.segmentDownloaded)} / ${formatBytes(channel.segmentTotal)}`
-                          : formatBytes(channel.segmentDownloaded)}
-                      </span>
-                    </td>
-                    <td className="mono">{formatSpeed(channel.speedBps)}</td>
-                    <td>
-                      <span className={`chip chip-channel-${channel.state}`}>
-                        {CHANNEL_STATE_LABEL[channel.state]}
-                      </span>
-                      {channel.retries > 0 && <span className="retry">重试 {channel.retries}</span>}
-                    </td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
-
-          {task.segments.length > 1 && (
-            <>
-              <div className="details-title">文件分片地图（每个方块是一个分片）</div>
-              <div className="segments">
-                {task.segments.map((segment) => (
-                  <div
-                    key={segment.index}
-                    className={`segment segment-${segment.state}`}
-                    title={`分片 #${segment.index + 1}　${formatRange(segment.start, segment.end)}　${formatBytes(
-                      segment.downloaded,
-                    )} / ${formatBytes(segment.total)}`}
-                  />
-                ))}
-              </div>
-            </>
+          {hasChannels && (
+            <table className="channels">
+              <thead>
+                <tr>
+                  <th>通道</th>
+                  <th>当前分片</th>
+                  <th className="col-progress">分片进度</th>
+                  <th>速度</th>
+                  <th>状态</th>
+                </tr>
+              </thead>
+              <tbody>
+                {task.channels.map((channel) => {
+                  const channelPercent = percent(channel.segmentDownloaded, channel.segmentTotal);
+                  return (
+                    <tr key={channel.id}>
+                      <td className="mono">#{channel.id + 1}</td>
+                      <td className="mono">
+                        {channel.segmentIndex === null
+                          ? '--'
+                          : `#${channel.segmentIndex + 1} · ${formatRange(channel.segmentStart, channel.segmentEnd)}`}
+                      </td>
+                      <td>
+                        <div className="bar bar-channel">
+                          <div
+                            className={`bar-fill bar-fill-${channel.state}`}
+                            style={{ width: `${channelPercent ?? 0}%` }}
+                          />
+                        </div>
+                        <span className="mono small">
+                          {channel.segmentTotal > 0
+                            ? `${formatBytes(channel.segmentDownloaded)} / ${formatBytes(channel.segmentTotal)}`
+                            : formatBytes(channel.segmentDownloaded)}
+                        </span>
+                      </td>
+                      <td className="mono">{formatSpeed(channel.speedBps)}</td>
+                      <td>
+                        <span className={`chip chip-channel-${channel.state}`}>
+                          {(channel.state === 'connecting' || channel.state === 'retrying') && (
+                            <span className="spinner" />
+                          )}
+                          {CHANNEL_STATE_LABEL[channel.state]}
+                        </span>
+                        {channel.retries > 0 && <span className="retry">重试 {channel.retries}</span>}
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
           )}
+
+          <ProgressMatrix task={task} />
         </div>
       )}
     </li>

@@ -10,6 +10,8 @@ pub struct AppState {
     pub manager: Arc<DownloadManager>,
     /// 数据库不可用时为 None，此时下载功能照常，只是不保存任务
     pub store: Option<Arc<Store>>,
+    /// 实际生效的窗口材质：vibrancy / mica / acrylic / blur / none
+    pub material: String,
 }
 
 #[derive(Serialize)]
@@ -94,4 +96,10 @@ pub async fn list_tasks(state: State<'_, AppState>) -> Result<Vec<TaskView>, Str
 #[tauri::command]
 pub async fn default_download_dir(state: State<'_, AppState>) -> Result<String, String> {
     Ok(state.manager.default_dir())
+}
+
+/// 前端据此决定侧边栏是透明的（有原生材质）还是纯色的（退回）
+#[tauri::command]
+pub async fn window_material(state: State<'_, AppState>) -> Result<String, String> {
+    Ok(state.material.clone())
 }

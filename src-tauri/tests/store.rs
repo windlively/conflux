@@ -1,16 +1,10 @@
 //! 数据库结构测试：建表、版本迁移、外键约束，以及分片数据能否支撑跨会话续传。
 
-use std::path::PathBuf;
-use std::time::{SystemTime, UNIX_EPOCH};
-
 use conflux_lib::store::{Store, SCHEMA_VERSION};
 
-fn temp_db(tag: &str) -> PathBuf {
-    let nanos = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_nanos();
-    std::env::temp_dir()
-        .join(format!("conflux-store-{tag}-{nanos}"))
-        .join("conflux.db")
-}
+mod common;
+
+use common::TempDir;
 
 fn table_names(store: &Store) -> Vec<String> {
     let conn = store.conn();
@@ -31,7 +25,8 @@ const INSERT_TASK: &str = "INSERT INTO tasks (id, url, dir, file_name, save_path
 
 #[test]
 fn fresh_database_creates_expected_schema() {
-    let path = temp_db("fresh");
+    let dir = TempDir::new("store-fresh");
+    let path = dir.join("conflux.db");
     let store = Store::open(&path).expect("打开数据库应成功");
 
     assert_eq!(
@@ -40,13 +35,12 @@ fn fresh_database_creates_expected_schema() {
     );
     assert_eq!(store.schema_version().expect("读取版本失败"), SCHEMA_VERSION);
     assert!(path.exists(), "数据库文件应已创建");
-
-    std::fs::remove_dir_all(path.parent().unwrap()).ok();
 }
 
 #[test]
 fn reopening_keeps_existing_rows() {
-    let path = temp_db("reopen");
+    let dir = TempDir::new("store-reopen");
+    let path = dir.join("conflux.db");
     {
         let store = Store::open(&path).expect("首次打开应成功");
         store
@@ -80,8 +74,6 @@ fn reopening_keeps_existing_rows() {
         .expect("统计任务失败");
     assert_eq!(count, 1, "重新打开不应清空已有数据");
     assert_eq!(store.schema_version().expect("读取版本失败"), SCHEMA_VERSION);
-
-    std::fs::remove_dir_all(path.parent().unwrap()).ok();
 }
 
 #[test]

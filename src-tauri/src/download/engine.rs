@@ -1,7 +1,7 @@
 use std::fs::{File, OpenOptions};
 use std::sync::atomic::Ordering;
 use std::sync::Arc;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use futures_util::StreamExt;
 use reqwest::header::{ACCEPT_ENCODING, CONTENT_RANGE, RANGE};
@@ -16,10 +16,14 @@ use super::task::{
 use super::types::*;
 
 pub type ProgressSink = Arc<dyn Fn(TaskView) + Send + Sync>;
+/// 周期性落库回调。调用方在调用它之前必须先让临时文件 fsync 完成。
+pub type ProgressFlush = Arc<dyn Fn() + Send + Sync>;
 
 const MAX_ATTEMPTS_PER_SEGMENT: u32 = 5;
 const RETRY_BASE_MS: u64 = 500;
 const TICK_INTERVAL_MS: u64 = 250;
+/// 进度落库间隔。崩溃时最多丢失这个时长的进度，重下即可，不会损坏文件。
+const FLUSH_INTERVAL: Duration = Duration::from_secs(2);
 
 pub enum Outcome {
     Completed,
@@ -203,10 +207,9 @@ async fn worker(
         }
         let next = counters.pending.lock().unwrap().pop_front();
         let Some(idx) = next else {
-            task.update_channel(channel_id, |c| {
-                c.state = ChannelState::Finished;
-                c.segment = None;
-            });
+            // 保留最后领取过的分片：队列空了不代表这一行没干活，
+            // 清空会让界面把一个已经下完的分片显示成 0 B
+            task.update_channel(channel_id, |c| c.state = ChannelState::Finished);
             return Ok(());
         };
 
@@ -216,53 +219,74 @@ async fn worker(
             c.retries = 0;
         });
 
-        let mut attempt = 0u32;
-        loop {
-            attempt += 1;
-            match fetch_segment(&client, &task, &counters, idx, channel_id, &cancel, &file).await {
-                Ok(()) => break,
-                Err(FetchError::Cancelled) => {
+        match fetch_segment(&client, &task, &counters, idx, channel_id, &cancel, &file).await {
+            Ok(()) => {}
+            Err(FetchError::Cancelled) => {
+                task.update_channel(channel_id, |c| c.state = ChannelState::Stopped);
+                return Ok(());
+            }
+            Err(FetchError::Failed(msg)) => {
+                let attempts = counters.attempts[idx].fetch_add(1, Ordering::SeqCst) + 1;
+                task.update_channel(channel_id, |c| {
+                    c.state = ChannelState::Retrying;
+                    c.retries = attempts;
+                    c.last_error = Some(msg.clone());
+                });
+                if attempts >= MAX_ATTEMPTS_PER_SEGMENT {
+                    let message = format!("分片 {} 重试 {attempts} 次后仍失败：{msg}", idx + 1);
+                    task.set_error(message.clone());
+                    cancel.cancel();
+                    return Err(message);
+                }
+                if sleep_or_cancel(&cancel, RETRY_BASE_MS).await {
                     task.update_channel(channel_id, |c| c.state = ChannelState::Stopped);
                     return Ok(());
                 }
-                Err(FetchError::Failed(msg)) => {
-                    let attempts = counters.attempts[idx].fetch_add(1, Ordering::SeqCst) + 1;
-                    task.update_channel(channel_id, |c| {
-                        c.state = ChannelState::Retrying;
-                        c.retries = attempt;
-                        c.last_error = Some(msg.clone());
-                    });
-                    if attempts >= MAX_ATTEMPTS_PER_SEGMENT {
-                        let message = format!("分片 {} 重试 {attempts} 次后仍失败：{msg}", idx + 1);
-                        task.set_error(message.clone());
-                        cancel.cancel();
-                        return Err(message);
-                    }
-                    let backoff = RETRY_BASE_MS * (1u64 << (attempt.min(4) - 1));
-                    if sleep_or_cancel(&cancel, backoff).await {
-                        task.update_channel(channel_id, |c| c.state = ChannelState::Stopped);
-                        return Ok(());
-                    }
-                    // 放回队首，让任意空闲通道重新领取
-                    counters.pending.lock().unwrap().push_front(idx);
-                    break;
-                }
+                // 放回队首，让任意空闲通道重新领取
+                counters.pending.lock().unwrap().push_front(idx);
             }
         }
     }
 }
 
-async fn ticker_loop(task: Arc<Task>, sink: ProgressSink, cancel: CancellationToken) {
+async fn ticker_loop(
+    task: Arc<Task>,
+    sink: ProgressSink,
+    file: Arc<File>,
+    flush: Option<ProgressFlush>,
+    cancel: CancellationToken,
+) {
     let mut interval = tokio::time::interval(Duration::from_millis(TICK_INTERVAL_MS));
     interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
+    let mut last_flush = Instant::now();
     loop {
         tokio::select! {
             _ = cancel.cancelled() => return,
             _ = interval.tick() => {
                 task.refresh_speeds();
                 emit(&task, &sink);
+                if let Some(flush) = &flush {
+                    if last_flush.elapsed() >= FLUSH_INTERVAL {
+                        // 顺序不能反：先把数据写进磁盘，再记录已提交偏移。
+                        // 否则掉电后库里的进度会超过文件里真实存在的内容，续传就会留空洞。
+                        if file.sync_data().is_ok() {
+                            flush();
+                        }
+                        last_flush = Instant::now();
+                    }
+                }
             }
         }
+    }
+}
+
+/// 恢复出来的进度必须和临时文件对得上，对不上就丢弃进度重下。
+fn part_file_consistent(file_len: u64, counters: &Counters, total: u64) -> bool {
+    if counters.single_stream {
+        // 单连接模式本来就从 0 重来，只要记录没超过文件实际长度即可
+        counters.total_downloaded() <= file_len
+    } else {
+        total > 0 && file_len == total && counters.total_downloaded() <= total
     }
 }
 
@@ -271,6 +295,7 @@ pub async fn run(
     client: Client,
     sink: ProgressSink,
     cancel: CancellationToken,
+    flush: Option<ProgressFlush>,
 ) -> Outcome {
     let needs_probe = {
         let mut inner = task.inner.lock().unwrap();
@@ -288,13 +313,42 @@ pub async fn run(
         match probe::probe(&client, &task.url).await {
             Ok(result) => {
                 let mut inner = task.inner.lock().unwrap();
-                inner.total = result.total.unwrap_or(0);
+                let probed_total = result.total.unwrap_or(0);
+                let previous_total = inner.total;
+                let resuming = inner.counters.is_some();
+
+                // 恢复出来的任务会重新探测：远端变了就绝不能接着拼，否则会得到损坏的文件
+                let size_changed =
+                    previous_total > 0 && probed_total > 0 && probed_total != previous_total;
+                let range_lost = inner
+                    .counters
+                    .as_ref()
+                    .map(|counters| !counters.single_stream && !result.supports_range)
+                    .unwrap_or(false);
+                if resuming && (size_changed || range_lost) {
+                    let message = if size_changed {
+                        format!(
+                            "远端文件大小已变化（原 {previous_total} 字节，现 {probed_total} 字节），已停止续传，请重新下载"
+                        )
+                    } else {
+                        "服务器已不再支持分段下载，无法沿用原有分片，请重新下载".to_string()
+                    };
+                    drop(inner);
+                    return abort(&task, &sink, message);
+                }
+
+                if probed_total > 0 {
+                    inner.total = probed_total;
+                }
                 inner.supports_range = result.supports_range;
-                let dir = inner.dir.clone();
-                if let Some(name) = result.file_name {
-                    if !name.is_empty() {
-                        inner.file_name = name.clone();
-                        inner.save_path = unique_path(&dir, &name);
+                // 已有进度时不能改文件名：换了名字就换了 .part 文件，旧进度会全部丢失
+                if !resuming {
+                    if let Some(name) = result.file_name {
+                        if !name.is_empty() {
+                            let dir = inner.dir.clone();
+                            inner.file_name = name.clone();
+                            inner.save_path = unique_path(&dir, &name);
+                        }
                     }
                 }
                 inner.probed = true;
@@ -334,12 +388,29 @@ pub async fn run(
             return abort(&task, &sink, format!("无法创建下载目录：{e}"));
         }
     }
-    let file = match OpenOptions::new().create(true).write(true).read(true).open(&part) {
+    // truncate(false)：已有临时文件代表上次的进度，截断等于从头再来
+    let file = match OpenOptions::new()
+        .create(true)
+        .write(true)
+        .read(true)
+        .truncate(false)
+        .open(&part)
+    {
         Ok(file) => file,
         Err(e) => {
             return abort(&task, &sink, format!("无法创建临时文件 {}：{e}", part.display()));
         }
     };
+
+    {
+        let total = task.inner.lock().unwrap().total;
+        let file_len = file.metadata().map(|meta| meta.len()).unwrap_or(0);
+        if counters.total_downloaded() > 0 && !part_file_consistent(file_len, &counters, total) {
+            eprintln!("临时文件与已记录的进度对不上，丢弃进度重新下载");
+            counters.reset_progress();
+            let _ = file.set_len(0);
+        }
+    }
 
     {
         let mut inner = task.inner.lock().unwrap();
@@ -360,11 +431,17 @@ pub async fn run(
 
     let file = Arc::new(file);
     emit(&task, &sink);
+    // 先把结构（任务行与分片）落库，之后由 ticker 按周期更新进度
+    if let Some(flush) = &flush {
+        flush();
+    }
 
     let ticker_cancel = CancellationToken::new();
     let ticker = tokio::spawn(ticker_loop(
         task.clone(),
         sink.clone(),
+        file.clone(),
+        flush.clone(),
         ticker_cancel.clone(),
     ));
 
@@ -418,7 +495,7 @@ pub async fn run(
                 }
             }
         } else if counters.is_complete() {
-            inner.status = TaskStatus::Completed;
+            // 状态留到重命名成功后再置「已完成」，否则界面可能拿到已消失的临时文件路径
             Outcome::Completed
         } else {
             let message = "下载中断：存在未完成的分片".to_string();
@@ -430,10 +507,9 @@ pub async fn run(
 
     match &outcome {
         Outcome::Completed => {
-            if let Ok(file) = Arc::try_unwrap(file) {
-                let _ = file.sync_all();
-                drop(file);
-            }
+            // 先关掉句柄：Windows 上被占用的文件无法重命名
+            let _ = file.sync_all();
+            drop(file);
             let (dir, file_name) = {
                 let inner = task.inner.lock().unwrap();
                 (inner.dir.clone(), inner.file_name.clone())
@@ -445,10 +521,20 @@ pub async fn run(
                 inner.status = TaskStatus::Failed;
                 inner.error = Some(message);
             } else {
-                task.inner.lock().unwrap().save_path = final_path;
+                let mut inner = task.inner.lock().unwrap();
+                inner.save_path = final_path;
+                inner.status = TaskStatus::Completed;
+            }
+            if let Some(flush) = &flush {
+                flush();
             }
         }
         Outcome::Stopped | Outcome::Cancelled | Outcome::Failed(_) => {
+            // 停止前把已写入的数据刷盘，再记录进度，保证下次续传的起点是可靠的
+            let _ = file.sync_data();
+            if let Some(flush) = &flush {
+                flush();
+            }
             task.zero_speeds();
             let mut inner = task.inner.lock().unwrap();
             for channel in inner.channels.iter_mut() {

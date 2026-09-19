@@ -79,7 +79,7 @@ export const CHANNEL_STATE_LABEL: Record<ChannelState, string> = {
   connecting: '连接中',
   downloading: '下载中',
   retrying: '重试中',
-  finished: '已结束',
+  finished: '已完成',
   stopped: '已停止',
   failed: '失败',
 };

@@ -12,6 +12,44 @@ pub enum TaskStatus {
     Cancelled,
 }
 
+impl TaskStatus {
+    /// 入库用的稳定字符串，与 serde 输出保持一致，避免前后端与数据库出现两套写法。
+    pub fn as_str(self) -> &'static str {
+        match self {
+            TaskStatus::Queued => "queued",
+            TaskStatus::Probing => "probing",
+            TaskStatus::Downloading => "downloading",
+            TaskStatus::Paused => "paused",
+            TaskStatus::Completed => "completed",
+            TaskStatus::Failed => "failed",
+            TaskStatus::Cancelled => "cancelled",
+        }
+    }
+
+    /// as_str 的逆：解析入库字符串，认不出来时返回 None。
+    pub fn from_stored(value: &str) -> Option<TaskStatus> {
+        match value {
+            "queued" => Some(TaskStatus::Queued),
+            "probing" => Some(TaskStatus::Probing),
+            "downloading" => Some(TaskStatus::Downloading),
+            "paused" => Some(TaskStatus::Paused),
+            "completed" => Some(TaskStatus::Completed),
+            "failed" => Some(TaskStatus::Failed),
+            "cancelled" => Some(TaskStatus::Cancelled),
+            _ => None,
+        }
+    }
+
+    /// 进程被强杀时留下的中间状态：恢复时一律按「已暂停」处理，
+    /// 否则界面上会出现没有任何线程在跑的「下载中」。
+    pub fn restored(self) -> TaskStatus {
+        match self {
+            TaskStatus::Queued | TaskStatus::Probing | TaskStatus::Downloading => TaskStatus::Paused,
+            other => other,
+        }
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub enum ChannelState {

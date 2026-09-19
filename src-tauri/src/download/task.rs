@@ -52,7 +52,7 @@ impl Counters {
 
     pub fn segmented(total: u64, connections: usize, channel_count: usize) -> Self {
         let seg_count = plan_segment_count(total, connections);
-        let base = (total + seg_count as u64 - 1) / seg_count as u64;
+        let base = total.div_ceil(seg_count as u64);
         let mut counters = Self::empty(seg_count, channel_count, false);
         let mut start = 0u64;
         for i in 0..seg_count {
@@ -75,6 +75,36 @@ impl Counters {
         counters
     }
 
+    /// 从数据库恢复：分片边界与已提交偏移都来自落库的数据，
+    /// 不再重新划分，否则偏移会与临时文件里的内容对不上。
+    pub fn restored(
+        seg_starts: Vec<u64>,
+        seg_lens: Vec<u64>,
+        seg_downloaded: Vec<u64>,
+        single_stream: bool,
+        channel_count: usize,
+    ) -> Self {
+        let seg_count = seg_lens.len();
+        debug_assert_eq!(seg_starts.len(), seg_count);
+        debug_assert_eq!(seg_downloaded.len(), seg_count);
+        let counters = Counters {
+            seg_starts,
+            seg_lens,
+            seg_downloaded: seg_downloaded.into_iter().map(AtomicU64::new).collect(),
+            channel_bytes: (0..channel_count).map(|_| AtomicU64::new(0)).collect(),
+            attempts: (0..seg_count).map(|_| AtomicU32::new(0)).collect(),
+            pending: Mutex::new(VecDeque::new()),
+            single_stream,
+            stream_completed: AtomicBool::new(false),
+        };
+        counters.reset_pending();
+        counters
+    }
+
+    pub fn seg_count(&self) -> usize {
+        self.seg_lens.len()
+    }
+
     pub fn reset_pending(&self) {
         let mut pending = self.pending.lock().unwrap();
         pending.clear();
@@ -90,6 +120,15 @@ impl Counters {
             pending.clear();
             pending.push_back(0);
         }
+    }
+
+    /// 丢弃全部已提交进度（临时文件与记录对不上时使用），随后必须清空临时文件。
+    pub fn reset_progress(&self) {
+        for counter in &self.seg_downloaded {
+            counter.store(0, Ordering::SeqCst);
+        }
+        self.stream_completed.store(false, Ordering::SeqCst);
+        self.reset_pending();
     }
 
     pub fn total_downloaded(&self) -> u64 {
@@ -139,6 +178,12 @@ impl ChannelRuntime {
     }
 }
 
+impl Default for ChannelRuntime {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 pub struct TaskInner {
     pub dir: PathBuf,
     pub file_name: String,
@@ -160,6 +205,14 @@ pub struct TaskInner {
     pub speed_bps: u64,
     pub last_total_bytes: u64,
     pub last_tick: Option<Instant>,
+    pub created_at: i64,
+}
+
+pub fn now_millis() -> i64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|elapsed| elapsed.as_millis() as i64)
+        .unwrap_or(0)
 }
 
 pub struct Task {
@@ -197,6 +250,7 @@ impl Task {
                 speed_bps: 0,
                 last_total_bytes: 0,
                 last_tick: None,
+                created_at: now_millis(),
             }),
         }
     }

@@ -1,41 +1,56 @@
 //! 引擎端到端测试：使用内置的最小 HTTP 服务器验证分段下载、
-//! 无 Range 降级以及暂停/继续后的文件正确性。
+//! 无 Range 降级、暂停/继续的文件正确性，以及跨会话（重启）后的续传。
 
 use std::net::SocketAddr;
-use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
-use std::time::{Duration, SystemTime, UNIX_EPOCH};
+use std::time::Duration;
 
 use conflux_lib::download::engine::{self, Outcome, ProgressSink};
 use conflux_lib::download::manager::{DownloadManager, EventSink, ManagerEvent};
 use conflux_lib::download::probe;
 use conflux_lib::download::task::Task;
 use conflux_lib::download::types::{ChannelState, SegmentState, TaskStatus, TaskView};
+use conflux_lib::store::Store;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::{TcpListener, TcpStream};
 use tokio_util::sync::CancellationToken;
 
+mod common;
+
+use common::TempDir;
+
 /// 每连接限速的最小测试服务器，bytes_per_sec 为 0 表示不限速。
+/// 内容可在同一地址上替换，用来模拟「服务器上的文件被换掉」。
 struct TestServer {
     addr: SocketAddr,
+    body: Arc<Mutex<Arc<Vec<u8>>>>,
+}
+
+impl TestServer {
+    fn set_body(&self, body: Vec<u8>) {
+        *self.body.lock().unwrap() = Arc::new(body);
+    }
 }
 
 async fn start_server(body: Vec<u8>, support_range: bool, bytes_per_sec: usize) -> TestServer {
     let listener = TcpListener::bind("127.0.0.1:0").await.expect("绑定端口失败");
     let addr = listener.local_addr().unwrap();
-    let body = Arc::new(body);
+    let shared = Arc::new(Mutex::new(Arc::new(body)));
+    let body = shared.clone();
     tokio::spawn(async move {
         loop {
             let Ok((socket, _)) = listener.accept().await else {
                 break;
             };
-            let body = body.clone();
+            let body = shared.clone();
             tokio::spawn(async move {
-                let _ = handle_connection(socket, body, support_range, bytes_per_sec).await;
+                // 请求开始时取一次快照，避免把替换前后的内容混在同一个响应里
+                let snapshot = { body.lock().unwrap().clone() };
+                let _ = handle_connection(socket, snapshot, support_range, bytes_per_sec).await;
             });
         }
     });
-    TestServer { addr }
+    TestServer { addr, body }
 }
 
 fn parse_range(line: &str) -> Option<(u64, u64)> {
@@ -104,11 +119,9 @@ async fn handle_connection(
     Ok(())
 }
 
-fn temp_dir(tag: &str) -> PathBuf {
-    let nanos = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_nanos();
-    let dir = std::env::temp_dir().join(format!("conflux-test-{tag}-{nanos}"));
-    std::fs::create_dir_all(&dir).unwrap();
-    dir
+/// 每个用例一个独立的临时目录，Drop 时自动删除。
+fn temp_dir(tag: &str) -> TempDir {
+    TempDir::new(&format!("test-{tag}"))
 }
 
 fn pattern(len: usize, modulo: usize) -> Vec<u8> {
@@ -140,11 +153,11 @@ async fn segmented_download_produces_correct_file_and_channel_progress() {
     let task = Arc::new(Task::new(
         "t1".to_string(),
         format!("http://{}/test.bin", server.addr),
-        dir.clone(),
+        dir.to_path_buf(),
         4,
     ));
     let (sink, views) = collect_views();
-    let outcome = engine::run(task.clone(), probe::client(), sink, CancellationToken::new()).await;
+    let outcome = engine::run(task.clone(), probe::client(), sink, CancellationToken::new(), None).await;
     assert!(matches!(outcome, Outcome::Completed), "任务应完成");
 
     let snapshot = task.snapshot();
@@ -166,6 +179,18 @@ async fn segmented_download_produces_correct_file_and_channel_progress() {
             .all(|segment| segment.state == SegmentState::Completed),
         "完成后所有分片都应标记为已完成"
     );
+    // 队列空掉之后通道仍要保留最后一个分片：清空会让界面把它显示成 0 B
+    for channel in &snapshot.channels {
+        assert_eq!(
+            channel.segment_total,
+            (size / 4) as u64,
+            "通道应保留自己下完的那个分片"
+        );
+        assert_eq!(
+            channel.segment_downloaded, channel.segment_total,
+            "已完成的分片进度条应停在 100%"
+        );
+    }
 
     let views = views.lock().unwrap();
 
@@ -243,11 +268,11 @@ async fn falls_back_to_single_connection_when_server_ignores_range() {
     let task = Arc::new(Task::new(
         "t2".to_string(),
         format!("http://{}/test.bin", server.addr),
-        dir,
+        dir.to_path_buf(),
         4,
     ));
     let (sink, _views) = collect_views();
-    let outcome = engine::run(task.clone(), probe::client(), sink, CancellationToken::new()).await;
+    let outcome = engine::run(task.clone(), probe::client(), sink, CancellationToken::new(), None).await;
     assert!(matches!(outcome, Outcome::Completed));
 
     let snapshot = task.snapshot();
@@ -269,7 +294,7 @@ async fn pause_then_resume_keeps_file_correct() {
     let dir = temp_dir("resume");
 
     let sink = noop_sink();
-    let manager = DownloadManager::new(sink, dir.clone());
+    let manager = DownloadManager::new(sink, dir.to_path_buf(), None);
     let id = manager
         .add(format!("http://{}/test.bin", server.addr), Some(dir.to_string_lossy().to_string()), Some(4))
         .expect("添加任务应成功");
@@ -299,7 +324,6 @@ async fn pause_then_resume_keeps_file_correct() {
     assert_eq!(written, body, "续传后的文件必须与源文件一致");
 
     manager.remove(&id, true).ok();
-    std::fs::remove_dir_all(&dir).ok();
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
@@ -310,7 +334,7 @@ async fn resume_while_pausing_is_not_lost() {
     let dir = temp_dir("resume-race");
 
     let sink = noop_sink();
-    let manager = DownloadManager::new(sink, dir.clone());
+    let manager = DownloadManager::new(sink, dir.to_path_buf(), None);
     let id = manager
         .add(format!("http://{}/test.bin", server.addr), Some(dir.to_string_lossy().to_string()), Some(4))
         .expect("添加任务应成功");
@@ -325,7 +349,107 @@ async fn resume_while_pausing_is_not_lost() {
     assert_eq!(written, body, "竞态场景下文件仍须完整");
 
     manager.remove(&id, true).ok();
-    std::fs::remove_dir_all(&dir).ok();
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn unfinished_task_survives_restart_and_resumes() {
+    let size = 16 * 1024 * 1024usize;
+    let body = pattern(size, 89);
+    let server = start_server(body.clone(), true, 1024 * 1024).await;
+    let dir = temp_dir("restart");
+    let db_path = dir.join("conflux.db");
+    let url = format!("http://{}/test.bin", server.addr);
+
+    // 第一次运行：下载一段时间后暂停并退出（模拟关掉应用）
+    let id = {
+        let store = Arc::new(Store::open(&db_path).expect("打开数据库应成功"));
+        let manager = DownloadManager::new(noop_sink(), dir.to_path_buf(), Some(store));
+        let id = manager
+            .add(url.clone(), Some(dir.to_string_lossy().to_string()), Some(4))
+            .expect("添加任务应成功");
+
+        tokio::time::sleep(Duration::from_millis(3200)).await;
+
+        // 还在下载中就应该已经周期性落库，而不是等到暂停才写一次
+        let live = Store::open(&db_path).expect("另开连接读取应成功");
+        let live_done: i64 = live
+            .load_segments(&id)
+            .expect("读取分片应成功")
+            .iter()
+            .map(|segment| segment.downloaded)
+            .sum();
+        assert!(live_done > 0, "下载过程中就应周期性落库，实际 {live_done}");
+
+        manager.pause(&id).expect("暂停应成功");
+        wait_until_stopped(&manager, &id).await;
+        assert!(manager.list()[0].downloaded_bytes > 0, "暂停前应有进度");
+        id
+    };
+
+    // 第二次运行：重新打开数据库，恢复出任务
+    let store = Arc::new(Store::open(&db_path).expect("重新打开数据库应成功"));
+    let manager = DownloadManager::new(noop_sink(), dir.to_path_buf(), Some(store));
+    let restored = manager.list();
+    assert_eq!(restored.len(), 1, "重启后应恢复出 1 个任务");
+    assert_eq!(restored[0].id, id, "恢复的任务 id 应与原来一致");
+    assert_eq!(restored[0].status, TaskStatus::Paused, "未完成任务恢复后应为已暂停");
+    assert!(
+        restored[0].downloaded_bytes > 0,
+        "恢复的进度应大于 0，实际 {}",
+        restored[0].downloaded_bytes
+    );
+    assert!(restored[0].channels.len() >= 2, "恢复的任务应保留多条下载通道");
+    assert_eq!(restored[0].total_bytes, size as u64);
+
+    manager.resume(&id).expect("继续应成功");
+    let done = wait_for(&manager, &id, TaskStatus::Completed).await;
+    let written = std::fs::read(&done.save_path).expect("最终文件应存在");
+    assert_eq!(written.len(), size);
+    assert_eq!(written, body, "跨会话续传后的文件必须与源文件逐字节一致");
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn restored_task_stops_when_remote_file_changed() {
+    let size = 16 * 1024 * 1024usize;
+    let server = start_server(pattern(size, 53), true, 1024 * 1024).await;
+    let dir = temp_dir("remote-changed");
+    let db_path = dir.join("conflux.db");
+    let url = format!("http://{}/test.bin", server.addr);
+
+    let id = {
+        let store = Arc::new(Store::open(&db_path).expect("打开数据库应成功"));
+        let manager = DownloadManager::new(noop_sink(), dir.to_path_buf(), Some(store));
+        let id = manager
+            .add(url.clone(), Some(dir.to_string_lossy().to_string()), Some(4))
+            .expect("添加任务应成功");
+        tokio::time::sleep(Duration::from_millis(3200)).await;
+        manager.pause(&id).expect("暂停应成功");
+        wait_until_stopped(&manager, &id).await;
+        assert!(manager.list()[0].downloaded_bytes > 0, "暂停前应有进度");
+        id
+    };
+
+    // 同一个地址上把远端换成另一个大小的文件
+    server.set_body(pattern(size + 4096, 71));
+
+    let store = Arc::new(Store::open(&db_path).expect("重新打开数据库应成功"));
+    let manager = DownloadManager::new(noop_sink(), dir.to_path_buf(), Some(store));
+    let restored = manager.list();
+    assert_eq!(restored.len(), 1, "重启后应恢复出 1 个任务");
+    assert_eq!(restored[0].status, TaskStatus::Paused);
+
+    manager.resume(&id).expect("继续应成功");
+    let failed = wait_for(&manager, &id, TaskStatus::Failed).await;
+    let error = failed.error.clone().unwrap_or_default();
+    assert!(
+        error.contains("远端文件大小已变化"),
+        "应拒绝续传并说明远端已变化，实际错误：{error}"
+    );
+    assert!(
+        failed.downloaded_bytes > 0 && failed.downloaded_bytes < size as u64,
+        "拒绝续传时不应丢掉已下载的进度，实际 {}",
+        failed.downloaded_bytes
+    );
 }
 
 async fn wait_until_stopped(manager: &Arc<DownloadManager>, id: &str) {
@@ -348,12 +472,14 @@ async fn wait_for(manager: &Arc<DownloadManager>, id: &str, expected: TaskStatus
         if view.status == expected {
             return view;
         }
-        assert!(
-            matches!(view.status, TaskStatus::Downloading | TaskStatus::Paused | TaskStatus::Completed | TaskStatus::Probing | TaskStatus::Queued),
-            "任务进入意外状态 {:?}：{}",
-            view.status,
-            view.error.clone().unwrap_or_default()
-        );
+        // 失败与取消是终态：再等只会等到超时，直接报出原因
+        if matches!(view.status, TaskStatus::Failed | TaskStatus::Cancelled) {
+            panic!(
+                "任务进入终态 {:?}：{}",
+                view.status,
+                view.error.clone().unwrap_or_default()
+            );
+        }
         tokio::time::sleep(Duration::from_millis(100)).await;
     }
     panic!("等待状态 {expected:?} 超时");
