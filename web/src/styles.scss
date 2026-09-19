@@ -1,0 +1,69 @@
+@use '@angular/material' as mat;
+
+/* 系统字体栈：沿用各平台自己的界面字体（macOS 的 SF、Windows 的 Segoe UI），不打包 Roboto */
+$system-font:
+  -apple-system,
+  BlinkMacSystemFont,
+  'Segoe UI',
+  'PingFang SC',
+  'Microsoft YaHei',
+  sans-serif;
+
+html {
+  color-scheme: light;
+
+  @include mat.theme(
+    (
+      color: (
+        primary: mat.$violet-palette,
+        theme-type: light,
+      ),
+      typography: (
+        plain-family: $system-font,
+        brand-family: $system-font,
+      ),
+      density: -2,
+    )
+  );
+}
+
+html,
+body {
+  height: 100%;
+  margin: 0;
+  /* 窗口本身是透明窗口，底色由侧边栏与内容区各自绘制，原生材质才能透出来 */
+  background: transparent;
+  color: var(--mat-sys-on-surface);
+  font: var(--mat-sys-body-medium);
+  -webkit-font-smoothing: antialiased;
+}
+
+/* 有系统材质时不要再盖一层厚底：只压一层薄雾保文字对比度 */
+html[data-material='glass'] .sidebar,
+html[data-material='vibrancy'] .sidebar {
+  background: rgba(250, 250, 252, 0.34);
+}
+
+/* 隐藏标题栏后，这块区域负责拖动窗口：与系统标题栏同高、覆盖整窗宽度 */
+.titlebar-drag {
+  display: none;
+}
+
+html[data-platform='macos'] .titlebar-drag {
+  display: block;
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 30px;
+  z-index: 10;
+}
+
+html[data-platform='windows'] .sidebar-top {
+  display: none;
+}
+
+/* macOS 隐藏标题栏后红黄绿灯浮在内容之上，侧边栏折叠时给内容区让位 */
+html[data-platform='macos'].sidebar-hidden .content-inner {
+  padding-top: 36px;
+}
