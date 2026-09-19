@@ -57,6 +57,13 @@ export interface TaskView {
   error: string | null;
 }
 
+export interface StorageInfo {
+  available: boolean;
+  path: string | null;
+  schemaVersion: number | null;
+  message: string | null;
+}
+
 export const TASK_STATUS_LABEL: Record<TaskStatus, string> = {
   queued: '排队中',
   probing: '解析资源',

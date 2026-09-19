@@ -1,11 +1,51 @@
 use std::sync::Arc;
 
-use tauri::State;
+use serde::Serialize;
+use tauri::{AppHandle, Manager, State};
 
 use crate::download::{DownloadManager, TaskView};
+use crate::store::Store;
 
 pub struct AppState {
     pub manager: Arc<DownloadManager>,
+    /// 数据库不可用时为 None，此时下载功能照常，只是不保存任务
+    pub store: Option<Arc<Store>>,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct StorageInfo {
+    pub available: bool,
+    pub path: Option<String>,
+    pub schema_version: Option<i64>,
+    pub message: Option<String>,
+}
+
+#[tauri::command]
+pub async fn storage_info(
+    app: AppHandle,
+    state: State<'_, AppState>,
+) -> Result<StorageInfo, String> {
+    let path = app
+        .path()
+        .app_data_dir()
+        .ok()
+        .map(|dir| dir.join("conflux.db").to_string_lossy().to_string());
+
+    match &state.store {
+        Some(store) => Ok(StorageInfo {
+            available: true,
+            path,
+            schema_version: Some(store.schema_version()?),
+            message: None,
+        }),
+        None => Ok(StorageInfo {
+            available: false,
+            path,
+            schema_version: None,
+            message: Some("数据库不可用，本次运行不会保存任务".to_string()),
+        }),
+    }
 }
 
 #[tauri::command]

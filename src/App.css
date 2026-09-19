@@ -429,3 +429,15 @@ textarea:focus {
 .segment-completed {
   background: var(--success);
 }
+
+.footer {
+  font-size: 12px;
+  color: var(--text-dim);
+  text-align: center;
+  word-break: break-all;
+  padding: 4px 0 8px;
+}
+
+.footer-warn {
+  color: var(--warning);
+}

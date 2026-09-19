@@ -1,7 +1,7 @@
 import { invoke } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
 
-import type { TaskView } from './types';
+import type { StorageInfo, TaskView } from './types';
 
 export const addTask = (url: string, dir: string | null, connections: number) =>
   invoke<string>('add_task', { url, dir, connections });
@@ -19,6 +19,8 @@ export const removeTask = (id: string, deleteFile = false) =>
 export const listTasks = () => invoke<TaskView[]>('list_tasks');
 
 export const defaultDownloadDir = () => invoke<string>('default_download_dir');
+
+export const storageInfo = () => invoke<StorageInfo>('storage_info');
 
 export const onTaskUpdate = (handler: (task: TaskView) => void) =>
   listen<TaskView>('task:update', (event) => handler(event.payload));

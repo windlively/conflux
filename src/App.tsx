@@ -1,9 +1,16 @@
 import { useEffect, useState } from 'react';
 
 import './App.css';
-import { addTask, defaultDownloadDir, listTasks, onTaskRemoved, onTaskUpdate } from './api';
+import {
+  addTask,
+  defaultDownloadDir,
+  listTasks,
+  onTaskRemoved,
+  onTaskUpdate,
+  storageInfo,
+} from './api';
 import { TaskItem } from './components/TaskItem';
-import type { TaskView } from './types';
+import type { StorageInfo, TaskView } from './types';
 
 function upsert(list: TaskView[], view: TaskView): TaskView[] {
   const index = list.findIndex((task) => task.id === view.id);
@@ -20,6 +27,7 @@ export default function App() {
   const [connections, setConnections] = useState(4);
   const [message, setMessage] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [storage, setStorage] = useState<StorageInfo | null>(null);
 
   useEffect(() => {
     let disposed = false;
@@ -27,10 +35,15 @@ export default function App() {
 
     (async () => {
       try {
-        const [initial, defaultDir] = await Promise.all([listTasks(), defaultDownloadDir()]);
+        const [initial, defaultDir, info] = await Promise.all([
+          listTasks(),
+          defaultDownloadDir(),
+          storageInfo(),
+        ]);
         if (disposed) return;
         setTasks(initial);
         setDir((current) => current || defaultDir);
+        setStorage(info);
         unlisten.push(await onTaskUpdate((view) => setTasks((prev) => upsert(prev, view))));
         unlisten.push(await onTaskRemoved((id) => setTasks((prev) => prev.filter((task) => task.id !== id))));
       } catch (error) {
@@ -131,6 +144,14 @@ export default function App() {
           </ul>
         )}
       </main>
+
+      {storage && (
+        <footer className={storage.available ? 'footer' : 'footer footer-warn'}>
+          {storage.available
+            ? `任务数据保存在 ${storage.path}（结构版本 ${storage.schemaVersion}）`
+            : `${storage.message ?? '未启用任务持久化'}${storage.path ? `｜预期位置 ${storage.path}` : ''}`}
+        </footer>
+      )}
     </div>
   );
 }
