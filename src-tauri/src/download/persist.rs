@@ -1,11 +1,14 @@
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::atomic::Ordering;
 use std::sync::{Arc, Mutex};
 
 use crate::store::{SegmentRecord, Store, TaskRecord};
 
-use super::task::{now_millis, plan_segment_count, ChannelRuntime, Counters, Task, TaskInner};
-use super::types::TaskStatus;
+use super::task::{
+    mark_selected, now_millis, plan_segment_count, BtInfo, ChannelRuntime, Counters, Task,
+    TaskInner, MAX_TASK_CONNECTIONS,
+};
+use super::types::{TaskKind, TaskStatus};
 
 /// 把任务当前状态写进数据库（不含分片）。
 pub fn save_task(store: &Store, task: &Task) -> Result<(), String> {
@@ -27,6 +30,7 @@ fn task_record(task: &Task) -> TaskRecord {
     TaskRecord {
         id: task.id.clone(),
         url: task.url.clone(),
+        kind: task.kind.as_str().to_string(),
         dir: inner.dir.to_string_lossy().to_string(),
         file_name: inner.file_name.clone(),
         save_path: inner.save_path.to_string_lossy().to_string(),
@@ -41,6 +45,13 @@ fn task_record(task: &Task) -> TaskRecord {
             .unwrap_or(false),
         connections: task.connections as i64,
         error: inner.error.clone(),
+        info_hash: inner.bt.as_ref().map(|bt| bt.info_hash.clone()),
+        magnet: inner.bt.as_ref().and_then(|bt| bt.magnet.clone()),
+        torrent_path: inner.bt.as_ref().and_then(|bt| bt.torrent_path.clone()),
+        only_files: inner
+            .only_files
+            .as_ref()
+            .and_then(|indices| serde_json::to_string(indices).ok()),
         created_at: inner.created_at,
         updated_at: now_millis(),
     }
@@ -49,7 +60,18 @@ fn task_record(task: &Task) -> TaskRecord {
 fn segment_records(task: &Task) -> Vec<SegmentRecord> {
     let inner = task.inner.lock().unwrap();
     let Some(counters) = &inner.counters else {
-        return Vec::new();
+        // BT 没有分片表，用一行覆盖整个文件的伪分片承载已下载字节，
+        // 重启后界面立刻能显示断点进度，不必等种子重新核对磁盘
+        return if task.kind == TaskKind::Bt && inner.total > 0 {
+            vec![SegmentRecord {
+                idx: 0,
+                start: 0,
+                len: inner.total as i64,
+                downloaded: inner.downloaded as i64,
+            }]
+        } else {
+            Vec::new()
+        };
     };
     (0..counters.seg_count())
         .map(|idx| SegmentRecord {
@@ -88,10 +110,46 @@ fn restore_one(
 ) -> Result<Arc<Task>, String> {
     let status = TaskStatus::from_stored(&record.status)
         .ok_or_else(|| format!("未知的任务状态 {}", record.status))?;
-    let connections = record.connections.clamp(1, 16) as usize;
+    let kind = TaskKind::from_stored(&record.kind)
+        .ok_or_else(|| format!("未知的任务类型 {}", record.kind))?;
+    let connections = record.connections.clamp(1, MAX_TASK_CONNECTIONS as i64) as usize;
     let segments = store.load_segments(&record.id)?;
 
-    let counters = if record.probed && segments_consistent(record, &segments) {
+    // 勾选过的文件要跨会话保留，重新挂载时按它只下选中的
+    let only_files: Option<Vec<usize>> = record
+        .only_files
+        .as_deref()
+        .and_then(|raw| serde_json::from_str(raw).ok());
+    // 种子文件任务本地就能解析出清单，重启后不必等恢复联网才让用户看到文件列表
+    let bt_files = if kind == TaskKind::Bt {
+        record
+            .torrent_path
+            .as_deref()
+            .map(Path::new)
+            .and_then(|path| super::bt::parse_torrent_file(path).ok())
+            .map(|preview| {
+                let mut files = preview.files;
+                mark_selected(&mut files, only_files.as_deref());
+                files
+            })
+            .unwrap_or_default()
+    } else {
+        Vec::new()
+    };
+
+    // BT 的那行伪分片只用来显示断点进度；真正下到哪了由会话重新核对磁盘后汇报
+    let downloaded = if kind == TaskKind::Bt {
+        segments
+            .first()
+            .filter(|segment| segment.start == 0 && segment.len == record.total_bytes)
+            .map(|segment| segment.downloaded.max(0) as u64)
+            .unwrap_or(0)
+    } else {
+        0
+    };
+    let counters = if kind == TaskKind::Bt {
+        None
+    } else if record.probed && segments_consistent(record, &segments) {
         let single_stream = record.single_stream;
         let channel_count = if single_stream { 1 } else { segments.len().max(1) };
         Some(Arc::new(Counters::restored(
@@ -109,6 +167,7 @@ fn restore_one(
     };
     let channel_count = match &counters {
         Some(counters) => counters.channel_bytes.len(),
+        None if kind == TaskKind::Bt => 0,
         None if record.single_stream => 1,
         None => plan_segment_count(record.total_bytes.max(0) as u64, connections).max(1),
     };
@@ -125,6 +184,7 @@ fn restore_one(
     Ok(Arc::new(Task {
         id: record.id.clone(),
         url: record.url.clone(),
+        kind,
         connections,
         inner: Mutex::new(TaskInner {
             dir,
@@ -134,9 +194,18 @@ fn restore_one(
             error: record.error.clone(),
             total: record.total_bytes.max(0) as u64,
             supports_range: record.supports_range,
-            // 恢复的任务重新探测一次，用来确认远端文件没有被替换
-            probed: false,
+            // http 任务重新探测一次，用来确认远端文件没有被替换
+            probed: kind == TaskKind::Bt,
             counters,
+            downloaded,
+            bt_stats: None,
+            bt_files,
+            only_files,
+            bt: (kind == TaskKind::Bt).then(|| BtInfo {
+                info_hash: record.info_hash.clone().unwrap_or_default(),
+                magnet: record.magnet.clone(),
+                torrent_path: record.torrent_path.clone(),
+            }),
             channels: (0..channel_count).map(|_| ChannelRuntime::new()).collect(),
             cancel: None,
             stop: None,

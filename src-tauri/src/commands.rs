@@ -3,7 +3,7 @@ use std::sync::Arc;
 use serde::Serialize;
 use tauri::{AppHandle, Manager, State};
 
-use crate::download::{DownloadManager, TaskView};
+use crate::download::{DownloadManager, TaskView, TorrentPreview};
 use crate::store::Store;
 
 pub struct AppState {
@@ -50,14 +50,57 @@ pub async fn storage_info(
     }
 }
 
+/// `files` 是预览后勾选的文件序号，留空表示全都下。
 #[tauri::command]
 pub async fn add_task(
     state: State<'_, AppState>,
     url: String,
     dir: Option<String>,
     connections: Option<usize>,
+    files: Option<Vec<usize>>,
 ) -> Result<String, String> {
-    state.manager.add(url, dir, connections)
+    state.manager.add(url, dir, connections, files)
+}
+
+/// 从本地 .torrent 种子文件建任务（元数据随文件自带，不用等 peer）。
+#[tauri::command]
+pub async fn add_torrent_file(
+    state: State<'_, AppState>,
+    path: String,
+    dir: Option<String>,
+    connections: Option<usize>,
+    files: Option<Vec<usize>>,
+) -> Result<String, String> {
+    state.manager.add_torrent_file(path, dir, connections, files)
+}
+
+/// 预览磁力：只取元数据看一眼文件清单，不建任务也不落盘。
+#[tauri::command]
+pub async fn preview_magnet(
+    state: State<'_, AppState>,
+    magnet: String,
+) -> Result<TorrentPreview, String> {
+    let manager = state.manager.clone();
+    manager.preview_magnet(magnet).await
+}
+
+/// 预览本地 .torrent 文件：纯本地解析，不用联网。
+#[tauri::command]
+pub async fn preview_torrent_file(
+    state: State<'_, AppState>,
+    path: String,
+) -> Result<TorrentPreview, String> {
+    state.manager.preview_torrent_file(path)
+}
+
+/// 改任务勾选的文件（种子里的文件序号）。
+#[tauri::command]
+pub async fn set_task_files(
+    state: State<'_, AppState>,
+    id: String,
+    files: Vec<usize>,
+) -> Result<(), String> {
+    state.manager.set_files(&id, files)
 }
 
 #[tauri::command]
@@ -102,4 +145,11 @@ pub async fn default_download_dir(state: State<'_, AppState>) -> Result<String, 
 #[tauri::command]
 pub async fn window_material(state: State<'_, AppState>) -> Result<String, String> {
     Ok(state.material.clone())
+}
+
+/// 设置所有任务合计的连接数上限（设置页的「总连接数上限」）
+#[tauri::command]
+pub async fn set_max_connections(state: State<'_, AppState>, limit: usize) -> Result<usize, String> {
+    state.manager.set_max_connections(limit);
+    Ok(state.manager.max_connections())
 }

@@ -1,5 +1,30 @@
 use serde::Serialize;
 
+/// 任务走的下载协议。http 走自研多连接引擎，bt 交给进程内的 librqbit 会话。
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub enum TaskKind {
+    Http,
+    Bt,
+}
+
+impl TaskKind {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            TaskKind::Http => "http",
+            TaskKind::Bt => "bt",
+        }
+    }
+
+    pub fn from_stored(value: &str) -> Option<TaskKind> {
+        match value {
+            "http" => Some(TaskKind::Http),
+            "bt" => Some(TaskKind::Bt),
+            _ => None,
+        }
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub enum TaskStatus {
@@ -98,11 +123,46 @@ pub struct SegmentView {
     pub state: SegmentState,
 }
 
+/// BT 任务的实时状态。BT 没有分片通道，用 peer 数与上传量代替通道表。
+#[derive(Debug, Clone, Copy, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct BtStats {
+    /// 已连上的 peer 数
+    pub peers_connected: u32,
+    /// 已知的 peer 数（含尚未连上的）
+    pub peers_seen: u32,
+    pub uploaded_bytes: u64,
+}
+
+/// 种子里的一个文件。既用于界面展示，也是「只下这几个」的选择依据：
+/// `selected` 为 false 的文件不会下载，已下载字节也停在选中时的那一刻。
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TorrentFile {
+    pub index: usize,
+    /// 种子内的相对路径
+    pub name: String,
+    pub length: u64,
+    pub selected: bool,
+    pub downloaded: u64,
+}
+
+/// 种子的「预览」：文件清单与总大小，不建任务也不落盘。
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TorrentPreview {
+    pub info_hash: String,
+    pub name: Option<String>,
+    pub total_bytes: u64,
+    pub files: Vec<TorrentFile>,
+}
+
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct TaskView {
     pub id: String,
     pub url: String,
+    pub kind: TaskKind,
     pub file_name: String,
     pub save_path: String,
     pub status: TaskStatus,
@@ -115,5 +175,11 @@ pub struct TaskView {
     pub supports_range: bool,
     pub channels: Vec<ChannelView>,
     pub segments: Vec<SegmentView>,
+    /// BT 的种子文件清单；磁力要等元数据到手才有，其它协议为空
+    pub files: Vec<TorrentFile>,
+    /// BT 的种子标识，其它协议为 None
+    pub info_hash: Option<String>,
+    /// 只有 BT 任务有
+    pub bt_stats: Option<BtStats>,
     pub error: Option<String>,
 }

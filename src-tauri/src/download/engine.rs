@@ -8,6 +8,7 @@ use reqwest::header::{ACCEPT_ENCODING, CONTENT_RANGE, RANGE};
 use reqwest::{Client, StatusCode};
 use tokio_util::sync::CancellationToken;
 
+use super::limit::ConnectionGate;
 use super::path::{part_path, unique_path, write_all_at};
 use super::probe;
 use super::task::{
@@ -199,6 +200,7 @@ async fn worker(
     counters: Arc<Counters>,
     cancel: CancellationToken,
     file: Arc<File>,
+    gate: Arc<ConnectionGate>,
 ) -> Result<(), String> {
     loop {
         if cancel.is_cancelled() {
@@ -210,6 +212,13 @@ async fn worker(
             // 保留最后领取过的分片：队列空了不代表这一行没干活，
             // 清空会让界面把一个已经下完的分片显示成 0 B
             task.update_channel(channel_id, |c| c.state = ChannelState::Finished);
+            return Ok(());
+        };
+
+        // 全局连接数上限：领到分片还要等一个空位才真的去连。
+        // 凭据活到这次循环结束——分片下完或让回队列时立刻还位，别的任务才有机会。
+        let Some(_permit) = gate.acquire(&cancel).await else {
+            task.update_channel(channel_id, |c| c.state = ChannelState::Stopped);
             return Ok(());
         };
 
@@ -296,6 +305,7 @@ pub async fn run(
     sink: ProgressSink,
     cancel: CancellationToken,
     flush: Option<ProgressFlush>,
+    gate: Arc<ConnectionGate>,
 ) -> Outcome {
     let needs_probe = {
         let mut inner = task.inner.lock().unwrap();
@@ -454,6 +464,7 @@ pub async fn run(
             counters.clone(),
             cancel.clone(),
             file.clone(),
+            gate.clone(),
         )));
     }
 
@@ -510,6 +521,8 @@ pub async fn run(
             // 先关掉句柄：Windows 上被占用的文件无法重命名
             let _ = file.sync_all();
             drop(file);
+            // 下载结束就没有速度可言，否则界面上会停着最后一刻的瞬时速度
+            task.zero_speeds();
             let (dir, file_name) = {
                 let inner = task.inner.lock().unwrap();
                 (inner.dir.clone(), inner.file_name.clone())

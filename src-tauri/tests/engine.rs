@@ -6,6 +6,7 @@ use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use conflux_lib::download::engine::{self, Outcome, ProgressSink};
+use conflux_lib::download::limit::ConnectionGate;
 use conflux_lib::download::manager::{DownloadManager, EventSink, ManagerEvent};
 use conflux_lib::download::probe;
 use conflux_lib::download::task::Task;
@@ -157,7 +158,15 @@ async fn segmented_download_produces_correct_file_and_channel_progress() {
         4,
     ));
     let (sink, views) = collect_views();
-    let outcome = engine::run(task.clone(), probe::client(), sink, CancellationToken::new(), None).await;
+    let outcome = engine::run(
+        task.clone(),
+        probe::client(),
+        sink,
+        CancellationToken::new(),
+        None,
+        ConnectionGate::new(16),
+    )
+    .await;
     assert!(matches!(outcome, Outcome::Completed), "任务应完成");
 
     let snapshot = task.snapshot();
@@ -272,7 +281,15 @@ async fn falls_back_to_single_connection_when_server_ignores_range() {
         4,
     ));
     let (sink, _views) = collect_views();
-    let outcome = engine::run(task.clone(), probe::client(), sink, CancellationToken::new(), None).await;
+    let outcome = engine::run(
+        task.clone(),
+        probe::client(),
+        sink,
+        CancellationToken::new(),
+        None,
+        ConnectionGate::new(16),
+    )
+    .await;
     assert!(matches!(outcome, Outcome::Completed));
 
     let snapshot = task.snapshot();
@@ -296,7 +313,7 @@ async fn pause_then_resume_keeps_file_correct() {
     let sink = noop_sink();
     let manager = DownloadManager::new(sink, dir.to_path_buf(), None);
     let id = manager
-        .add(format!("http://{}/test.bin", server.addr), Some(dir.to_string_lossy().to_string()), Some(4))
+        .add(format!("http://{}/test.bin", server.addr), Some(dir.to_string_lossy().to_string()), Some(4), None)
         .expect("添加任务应成功");
 
     tokio::time::sleep(Duration::from_millis(1500)).await;
@@ -336,7 +353,7 @@ async fn resume_while_pausing_is_not_lost() {
     let sink = noop_sink();
     let manager = DownloadManager::new(sink, dir.to_path_buf(), None);
     let id = manager
-        .add(format!("http://{}/test.bin", server.addr), Some(dir.to_string_lossy().to_string()), Some(4))
+        .add(format!("http://{}/test.bin", server.addr), Some(dir.to_string_lossy().to_string()), Some(4), None)
         .expect("添加任务应成功");
 
     tokio::time::sleep(Duration::from_millis(1200)).await;
@@ -365,7 +382,7 @@ async fn unfinished_task_survives_restart_and_resumes() {
         let store = Arc::new(Store::open(&db_path).expect("打开数据库应成功"));
         let manager = DownloadManager::new(noop_sink(), dir.to_path_buf(), Some(store));
         let id = manager
-            .add(url.clone(), Some(dir.to_string_lossy().to_string()), Some(4))
+            .add(url.clone(), Some(dir.to_string_lossy().to_string()), Some(4), None)
             .expect("添加任务应成功");
 
         tokio::time::sleep(Duration::from_millis(3200)).await;
@@ -420,7 +437,7 @@ async fn restored_task_stops_when_remote_file_changed() {
         let store = Arc::new(Store::open(&db_path).expect("打开数据库应成功"));
         let manager = DownloadManager::new(noop_sink(), dir.to_path_buf(), Some(store));
         let id = manager
-            .add(url.clone(), Some(dir.to_string_lossy().to_string()), Some(4))
+            .add(url.clone(), Some(dir.to_string_lossy().to_string()), Some(4), None)
             .expect("添加任务应成功");
         tokio::time::sleep(Duration::from_millis(3200)).await;
         manager.pause(&id).expect("暂停应成功");
@@ -450,6 +467,50 @@ async fn restored_task_stops_when_remote_file_changed() {
         "拒绝续传时不应丢掉已下载的进度，实际 {}",
         failed.downloaded_bytes
     );
+}
+
+/// 全局连接数上限：两个任务各开 4 条通道，上限压到 2 时任何时刻真正占用的
+/// 连接数都不该超过 2；把上限调大之后应立刻看到占用超过 2，证明之前是被闸门挡住的。
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn global_connection_limit_caps_all_tasks() {
+    let size = 32 * 1024 * 1024usize;
+    let server = start_server(pattern(size, 97), true, 1024 * 1024).await;
+    let dir = temp_dir("global-limit");
+    let manager = DownloadManager::new(noop_sink(), dir.to_path_buf(), None);
+    manager.set_max_connections(2);
+
+    let first = manager.add(format!("http://{}/a.bin", server.addr), None, Some(4), None).unwrap();
+    let second = manager.add(format!("http://{}/b.bin", server.addr), None, Some(4), None).unwrap();
+    wait_for(&manager, &first, TaskStatus::Downloading).await;
+    wait_for(&manager, &second, TaskStatus::Downloading).await;
+
+    let mut capped_peak = 0;
+    for _ in 0..25 {
+        capped_peak = capped_peak.max(manager.active_connections());
+        tokio::time::sleep(Duration::from_millis(40)).await;
+    }
+    assert!(
+        capped_peak <= 2,
+        "上限为 2 时占用不该超过 2，实际 {capped_peak}"
+    );
+
+    manager.set_max_connections(16);
+    let mut raised_peak = capped_peak;
+    for _ in 0..25 {
+        raised_peak = raised_peak.max(manager.active_connections());
+        tokio::time::sleep(Duration::from_millis(40)).await;
+    }
+    assert!(
+        raised_peak > 2,
+        "调大上限后应能占用更多连接，实际 {raised_peak}"
+    );
+
+    for id in [&first, &second] {
+        manager.pause(id).expect("暂停应成功");
+    }
+    wait_until_stopped(&manager, &first).await;
+    wait_until_stopped(&manager, &second).await;
+    assert_eq!(manager.active_connections(), 0, "停稳后连接应全部归还");
 }
 
 async fn wait_until_stopped(manager: &Arc<DownloadManager>, id: &str) {

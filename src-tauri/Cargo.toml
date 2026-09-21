@@ -31,6 +31,10 @@ rusqlite = { version = "0.40.2", features = ["bundled"] }
 uuid = { version = "1.26.1", features = ["v4"] }
 tauri-plugin-dialog = "2.7.3"
 window-vibrancy = "0.6"
+# BT／磁力：进程内引擎。default-tls 除了给 tracker／种子 URL 走 HTTPS 之外，
+# 还负责打开 sha1 后端（librqbit 以 default-features = false 引用 librqbit-core，
+# 不选任一 tls feature 会缺少 sha1 实现而编译失败）；http-api-client 用不上，关掉。
+librqbit = { version = "9.0.1", default-features = false, features = ["default-tls"] }
 
 [dev-dependencies]
 tokio = { version = "1", features = ["macros", "rt-multi-thread", "net", "io-util", "time", "sync"] }

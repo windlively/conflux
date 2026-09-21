@@ -64,6 +64,10 @@ pub fn run() {
         })
         .invoke_handler(tauri::generate_handler![
             commands::add_task,
+            commands::add_torrent_file,
+            commands::preview_magnet,
+            commands::preview_torrent_file,
+            commands::set_task_files,
             commands::pause_task,
             commands::resume_task,
             commands::cancel_task,
@@ -72,6 +76,7 @@ pub fn run() {
             commands::default_download_dir,
             commands::storage_info,
             commands::window_material,
+            commands::set_max_connections,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

@@ -76,6 +76,82 @@ fn reopening_keeps_existing_rows() {
     assert_eq!(store.schema_version().expect("读取版本失败"), SCHEMA_VERSION);
 }
 
+/// 旧版本应用留下的 1 版结构：迁移测试要写死当时的形状，不能跟着新结构走。
+const OLD_V1_SCHEMA: &str = r#"
+CREATE TABLE IF NOT EXISTS tasks (
+    id             TEXT    PRIMARY KEY,
+    url            TEXT    NOT NULL,
+    dir            TEXT    NOT NULL,
+    file_name      TEXT    NOT NULL,
+    save_path      TEXT    NOT NULL,
+    status         TEXT    NOT NULL,
+    total_bytes    INTEGER NOT NULL DEFAULT 0,
+    supports_range INTEGER NOT NULL DEFAULT 0,
+    probed         INTEGER NOT NULL DEFAULT 0,
+    single_stream  INTEGER NOT NULL DEFAULT 0,
+    connections    INTEGER NOT NULL,
+    error          TEXT,
+    created_at     INTEGER NOT NULL,
+    updated_at     INTEGER NOT NULL
+);
+CREATE TABLE IF NOT EXISTS segments (
+    task_id    TEXT    NOT NULL REFERENCES tasks(id) ON DELETE CASCADE,
+    idx        INTEGER NOT NULL,
+    start      INTEGER NOT NULL,
+    len        INTEGER NOT NULL,
+    downloaded INTEGER NOT NULL DEFAULT 0,
+    PRIMARY KEY (task_id, idx)
+);
+"#;
+
+/// 老库要能原样打开：迁移补齐新列，老任务的数据一个不丢，
+/// 并且按新结构读得出来（缺列的话 load_tasks 直接报错）。
+#[test]
+fn opening_an_old_database_migrates_without_losing_tasks() {
+    let dir = TempDir::new("store-migrate");
+    let path = dir.join("conflux.db");
+
+    {
+        let conn = rusqlite::Connection::open(&path).expect("创建旧库失败");
+        conn.execute_batch(OLD_V1_SCHEMA).expect("建旧表失败");
+        conn.execute(
+            INSERT_TASK,
+            rusqlite::params![
+                "old-1",
+                "https://example.com/old.bin",
+                "/tmp",
+                "old.bin",
+                "/tmp/old.bin",
+                "paused",
+                4096i64,
+                1,
+                1,
+                0,
+                4,
+                None::<String>,
+                1i64,
+                2i64
+            ],
+        )
+        .expect("插入旧任务失败");
+        conn.pragma_update(None, "user_version", 1i64)
+            .expect("写入旧版本号失败");
+    }
+
+    let store = Store::open(&path).expect("打开旧库应自动迁移");
+    assert_eq!(store.schema_version().expect("读取版本失败"), SCHEMA_VERSION);
+
+    let tasks = store.load_tasks().expect("迁移后应能按新结构读回任务");
+    assert_eq!(tasks.len(), 1, "迁移不该丢任务");
+    let record = &tasks[0];
+    assert_eq!(record.id, "old-1");
+    assert_eq!(record.total_bytes, 4096);
+    assert_eq!(record.status, "paused");
+    assert_eq!(record.kind, "http", "老任务没有协议列，按 http 补齐");
+    assert!(record.only_files.is_none(), "老任务没有勾选记录");
+    assert!(record.magnet.is_none() && record.info_hash.is_none());
+}
+
 #[test]
 fn segments_follow_their_task() {
     let store = Store::open_in_memory().expect("创建内存库应成功");

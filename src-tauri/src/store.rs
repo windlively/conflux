@@ -5,7 +5,7 @@ use std::sync::{Mutex, MutexGuard};
 use rusqlite::{params, Connection};
 
 /// 表结构变更时递增，并在 `migrate` 中追加对应的迁移分支。
-pub const SCHEMA_VERSION: i64 = 1;
+pub const SCHEMA_VERSION: i64 = 3;
 
 /// 1 版结构：任务元数据 + 分片已提交偏移。
 /// 跨会话续传靠的就是后者——恢复时按 segments 里的 downloaded 继续请求剩余区间。
@@ -37,6 +37,21 @@ CREATE TABLE IF NOT EXISTS segments (
 );
 "#;
 
+/// 2 版结构：任务区分协议（http/bt），BT 任务额外记住 info hash、磁力与种子文件。
+/// 跨会话恢复 BT 任务就靠 info hash／磁力重新挂载。
+const SCHEMA_V2: &str = r#"
+ALTER TABLE tasks ADD COLUMN kind         TEXT NOT NULL DEFAULT 'http';
+ALTER TABLE tasks ADD COLUMN info_hash    TEXT;
+ALTER TABLE tasks ADD COLUMN magnet       TEXT;
+ALTER TABLE tasks ADD COLUMN torrent_path TEXT;
+"#;
+
+/// 3 版结构：BT 任务勾选了哪几个文件（JSON 数组，NULL 表示全下）。
+/// 重启后重新挂载要按它只下选中的文件。
+const SCHEMA_V3: &str = r#"
+ALTER TABLE tasks ADD COLUMN only_files TEXT;
+"#;
+
 /// 任务持久化。除了任务本身，还必须保存分片的已提交偏移，
 /// 否则重启后无法从断点继续，只能整文件重下。
 pub struct Store {
@@ -48,6 +63,8 @@ pub struct Store {
 pub struct TaskRecord {
     pub id: String,
     pub url: String,
+    /// http／bt，见 download::types::TaskKind
+    pub kind: String,
     pub dir: String,
     pub file_name: String,
     pub save_path: String,
@@ -58,6 +75,14 @@ pub struct TaskRecord {
     pub single_stream: bool,
     pub connections: i64,
     pub error: Option<String>,
+    /// BT：种子标识，重启后按它重新挂载
+    pub info_hash: Option<String>,
+    /// BT：用户填的磁力链接原文；种子文件任务则为空
+    pub magnet: Option<String>,
+    /// BT：来自 .torrent 文件时记下文件路径
+    pub torrent_path: Option<String>,
+    /// BT：勾选的文件序号（JSON 数组），NULL 表示全下
+    pub only_files: Option<String>,
     pub created_at: i64,
     pub updated_at: i64,
 }
@@ -72,14 +97,17 @@ pub struct SegmentRecord {
     pub downloaded: i64,
 }
 
-const TASK_UPSERT: &str = "INSERT INTO tasks (id, url, dir, file_name, save_path, status, \
-     total_bytes, supports_range, probed, single_stream, connections, error, created_at, updated_at) \
-     VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14) \
-     ON CONFLICT(id) DO UPDATE SET url = excluded.url, dir = excluded.dir, \
+const TASK_UPSERT: &str = "INSERT INTO tasks (id, url, kind, dir, file_name, save_path, status, \
+     total_bytes, supports_range, probed, single_stream, connections, error, info_hash, magnet, \
+     torrent_path, only_files, created_at, updated_at) \
+     VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19) \
+     ON CONFLICT(id) DO UPDATE SET url = excluded.url, kind = excluded.kind, dir = excluded.dir, \
      file_name = excluded.file_name, save_path = excluded.save_path, status = excluded.status, \
      total_bytes = excluded.total_bytes, supports_range = excluded.supports_range, \
      probed = excluded.probed, single_stream = excluded.single_stream, \
-     connections = excluded.connections, error = excluded.error, updated_at = excluded.updated_at";
+     connections = excluded.connections, error = excluded.error, info_hash = excluded.info_hash, \
+     magnet = excluded.magnet, torrent_path = excluded.torrent_path, \
+     only_files = excluded.only_files, updated_at = excluded.updated_at";
 
 const SEGMENT_UPSERT: &str = "INSERT INTO segments (task_id, idx, start, len, downloaded) \
      VALUES (?1, ?2, ?3, ?4, ?5) \
@@ -131,6 +159,7 @@ impl Store {
                 params![
                     record.id,
                     record.url,
+                    record.kind,
                     record.dir,
                     record.file_name,
                     record.save_path,
@@ -141,6 +170,10 @@ impl Store {
                     record.single_stream as i64,
                     record.connections,
                     record.error,
+                    record.info_hash,
+                    record.magnet,
+                    record.torrent_path,
+                    record.only_files,
                     record.created_at,
                     record.updated_at,
                 ],
@@ -185,8 +218,9 @@ impl Store {
         let conn = self.conn();
         let mut statement = conn
             .prepare(
-                "SELECT id, url, dir, file_name, save_path, status, total_bytes, supports_range, \
-                 probed, single_stream, connections, error, created_at, updated_at \
+                "SELECT id, url, kind, dir, file_name, save_path, status, total_bytes, \
+                 supports_range, probed, single_stream, connections, error, info_hash, magnet, \
+                 torrent_path, only_files, created_at, updated_at \
                  FROM tasks ORDER BY created_at, rowid",
             )
             .map_err(|err| format!("准备任务查询失败：{err}"))?;
@@ -195,18 +229,23 @@ impl Store {
                 Ok(TaskRecord {
                     id: row.get(0)?,
                     url: row.get(1)?,
-                    dir: row.get(2)?,
-                    file_name: row.get(3)?,
-                    save_path: row.get(4)?,
-                    status: row.get(5)?,
-                    total_bytes: row.get(6)?,
-                    supports_range: row.get::<_, i64>(7)? != 0,
-                    probed: row.get::<_, i64>(8)? != 0,
-                    single_stream: row.get::<_, i64>(9)? != 0,
-                    connections: row.get(10)?,
-                    error: row.get(11)?,
-                    created_at: row.get(12)?,
-                    updated_at: row.get(13)?,
+                    kind: row.get(2)?,
+                    dir: row.get(3)?,
+                    file_name: row.get(4)?,
+                    save_path: row.get(5)?,
+                    status: row.get(6)?,
+                    total_bytes: row.get(7)?,
+                    supports_range: row.get::<_, i64>(8)? != 0,
+                    probed: row.get::<_, i64>(9)? != 0,
+                    single_stream: row.get::<_, i64>(10)? != 0,
+                    connections: row.get(11)?,
+                    error: row.get(12)?,
+                    info_hash: row.get(13)?,
+                    magnet: row.get(14)?,
+                    torrent_path: row.get(15)?,
+                    only_files: row.get(16)?,
+                    created_at: row.get(17)?,
+                    updated_at: row.get(18)?,
                 })
             })
             .map_err(|err| format!("查询任务失败：{err}"))?;
@@ -264,6 +303,14 @@ fn migrate(conn: &mut Connection) -> Result<(), String> {
     if version < 1 {
         tx.execute_batch(SCHEMA_V1)
             .map_err(|err| format!("创建表结构失败：{err}"))?;
+    }
+    if version < 2 {
+        tx.execute_batch(SCHEMA_V2)
+            .map_err(|err| format!("升级到 2 版结构失败：{err}"))?;
+    }
+    if version < 3 {
+        tx.execute_batch(SCHEMA_V3)
+            .map_err(|err| format!("升级到 3 版结构失败：{err}"))?;
     }
     tx.pragma_update(None, "user_version", SCHEMA_VERSION)
         .map_err(|err| format!("写入数据库版本失败：{err}"))?;

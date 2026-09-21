@@ -6,13 +6,16 @@ use std::time::Instant;
 
 use tokio_util::sync::CancellationToken;
 
-use super::path::{file_name_from_url, part_path, unique_path};
+use super::path::{file_name_from_url, part_path, sanitize_file_name, unique_path};
 use super::types::*;
 
 /// 小于该体积直接单连接，分段调度的收益低于额外开销
 pub const MIN_MULTI_CONNECTION_BYTES: u64 = 16 * 1024 * 1024;
 /// 单个分片的下限，避免出现大量极短连接
 pub const MIN_SEGMENT_BYTES: u64 = 4 * 1024 * 1024;
+/// 单个任务的通道数上限。分片数还受文件体积限制（每片至少 4 MiB），
+/// 所以调高它不会让小文件凭空多开连接。
+pub const MAX_TASK_CONNECTIONS: usize = 32;
 
 pub fn plan_segment_count(total: u64, connections: usize) -> usize {
     let connections = connections.max(1);
@@ -184,6 +187,23 @@ impl Default for ChannelRuntime {
     }
 }
 
+/// 按选择集刷新每个文件的 selected 标记；None 表示全选。
+pub fn mark_selected(files: &mut [TorrentFile], only_files: Option<&[usize]>) {
+    for file in files.iter_mut() {
+        file.selected = only_files
+            .map(|only| only.contains(&file.index))
+            .unwrap_or(true);
+    }
+}
+
+/// BT 任务独有的信息。http 任务为 None。
+pub struct BtInfo {
+    /// 种子标识；磁力在入队时就能拿到，种子文件要等解析
+    pub info_hash: String,
+    pub magnet: Option<String>,
+    pub torrent_path: Option<String>,
+}
+
 pub struct TaskInner {
     pub dir: PathBuf,
     pub file_name: String,
@@ -194,6 +214,15 @@ pub struct TaskInner {
     pub supports_range: bool,
     pub probed: bool,
     pub counters: Option<std::sync::Arc<Counters>>,
+    /// 没有分片通道的协议（BT）直接由会话汇报已下载字节
+    pub downloaded: u64,
+    pub bt: Option<BtInfo>,
+    /// BT 的 peer 数与上传量，由会话的统计快照刷新
+    pub bt_stats: Option<BtStats>,
+    /// 种子里的文件清单。磁力要在元数据到手后才有，种子文件入队即知
+    pub bt_files: Vec<TorrentFile>,
+    /// 用户勾选的文件序号；None 表示全选
+    pub only_files: Option<Vec<usize>>,
     pub channels: Vec<ChannelRuntime>,
     pub cancel: Option<CancellationToken>,
     pub stop: Option<StopKind>,
@@ -218,18 +247,20 @@ pub fn now_millis() -> i64 {
 pub struct Task {
     pub id: String,
     pub url: String,
+    pub kind: TaskKind,
     pub connections: usize,
     pub inner: Mutex<TaskInner>,
 }
 
 impl Task {
     pub fn new(id: String, url: String, dir: PathBuf, connections: usize) -> Self {
-        let connections = connections.clamp(1, 16);
+        let connections = connections.clamp(1, MAX_TASK_CONNECTIONS);
         let file_name = file_name_from_url(&url).unwrap_or_else(|| "download.bin".to_string());
         let save_path = unique_path(&dir, &file_name);
         Task {
             id,
             url,
+            kind: TaskKind::Http,
             connections,
             inner: Mutex::new(TaskInner {
                 dir,
@@ -241,6 +272,11 @@ impl Task {
                 supports_range: false,
                 probed: false,
                 counters: None,
+                downloaded: 0,
+                bt: None,
+                bt_stats: None,
+                bt_files: Vec::new(),
+                only_files: None,
                 channels: Vec::new(),
                 cancel: None,
                 stop: None,
@@ -253,6 +289,202 @@ impl Task {
                 created_at: now_millis(),
             }),
         }
+    }
+
+    /// BT 任务：元数据到手前只知道磁力里的 dn，先拿它占位。
+    /// 这里不能用 unique_path 改名——librqbit 按种子里的名字落盘，
+    /// 改了名字进度就对不上；同名文件按 BT 客户端的通行做法直接续写。
+    pub fn new_bt(
+        id: String,
+        url: String,
+        dir: PathBuf,
+        connections: usize,
+        info_hash: String,
+        name: Option<String>,
+    ) -> Self {
+        let connections = connections.clamp(1, MAX_TASK_CONNECTIONS);
+        let file_name = name
+            .map(|name| sanitize_file_name(&name))
+            .filter(|name| !name.is_empty())
+            .unwrap_or_else(|| "磁力任务".to_string());
+        let save_path = dir.join(&file_name);
+        let magnet = url.clone();
+        Task {
+            id,
+            url,
+            kind: TaskKind::Bt,
+            connections,
+            inner: Mutex::new(TaskInner {
+                dir,
+                file_name,
+                save_path,
+                status: TaskStatus::Queued,
+                error: None,
+                total: 0,
+                supports_range: false,
+                // BT 没有探测这一步，元数据到手就算探明
+                probed: true,
+                counters: None,
+                downloaded: 0,
+                bt: Some(BtInfo {
+                    info_hash,
+                    magnet: Some(magnet),
+                    torrent_path: None,
+                }),
+                bt_stats: None,
+                bt_files: Vec::new(),
+                only_files: None,
+                channels: Vec::new(),
+                cancel: None,
+                stop: None,
+                running: false,
+                resume_pending: false,
+                removed: false,
+                speed_bps: 0,
+                last_total_bytes: 0,
+                last_tick: None,
+                created_at: now_millis(),
+            }),
+        }
+    }
+
+    /// 种子文件任务：元数据就在文件里，入队时名字与总大小都是确定的。
+    pub fn new_torrent(
+        id: String,
+        path: String,
+        dir: PathBuf,
+        connections: usize,
+        info: TorrentPreview,
+    ) -> Self {
+        let connections = connections.clamp(1, MAX_TASK_CONNECTIONS);
+        let file_name = info
+            .name
+            .as_deref()
+            .map(sanitize_file_name)
+            .filter(|name| !name.is_empty())
+            .unwrap_or_else(|| "种子任务".to_string());
+        let save_path = dir.join(&file_name);
+        Task {
+            id,
+            url: path.clone(),
+            kind: TaskKind::Bt,
+            connections,
+            inner: Mutex::new(TaskInner {
+                dir,
+                file_name,
+                save_path,
+                status: TaskStatus::Queued,
+                error: None,
+                total: info.total_bytes,
+                supports_range: false,
+                probed: true,
+                counters: None,
+                downloaded: 0,
+                bt: Some(BtInfo {
+                    info_hash: info.info_hash,
+                    magnet: None,
+                    torrent_path: Some(path),
+                }),
+                bt_stats: None,
+                // 种子文件自带清单，入队就能让用户挑文件
+                bt_files: info.files,
+                only_files: None,
+                channels: Vec::new(),
+                cancel: None,
+                stop: None,
+                running: false,
+                resume_pending: false,
+                removed: false,
+                speed_bps: 0,
+                last_total_bytes: 0,
+                last_tick: None,
+                created_at: now_millis(),
+            }),
+        }
+    }
+
+    /// 元数据到手后回填：真实文件名、总大小，以及种子文件任务首次拿到的 info hash。
+    /// 保存路径跟着种子里的名字走，与 librqbit 实际落盘的位置保持一致。
+    pub fn apply_torrent_meta(&self, name: &str, total: u64, info_hash: Option<String>) {
+        let mut inner = self.inner.lock().unwrap();
+        let file_name = sanitize_file_name(name);
+        if !file_name.is_empty() {
+            inner.save_path = inner.dir.join(&file_name);
+            inner.file_name = file_name;
+        }
+        inner.total = total;
+        if let (Some(info_hash), Some(bt)) = (info_hash, inner.bt.as_mut()) {
+            bt.info_hash = info_hash;
+        }
+    }
+
+    pub fn set_bt_stats(&self, stats: BtStats) {
+        self.inner.lock().unwrap().bt_stats = Some(stats);
+    }
+
+    pub fn only_files(&self) -> Option<Vec<usize>> {
+        self.inner.lock().unwrap().only_files.clone()
+    }
+
+    /// 元数据到手后写入文件清单，用户已有的勾选要保留。
+    pub fn set_torrent_files(&self, mut files: Vec<TorrentFile>) {
+        let mut inner = self.inner.lock().unwrap();
+        mark_selected(&mut files, inner.only_files.as_deref());
+        inner.bt_files = files;
+    }
+
+    /// 用户改了勾选。运行中的任务由会话在下一拍应用，没在跑的等重新挂载时生效。
+    pub fn set_only_files(&self, indices: Vec<usize>) {
+        let mut inner = self.inner.lock().unwrap();
+        let all = inner.bt_files.len();
+        // 选满就是「全选」，存 None 更省事，也免得索引与清单不一致
+        let selection = if all > 0 && indices.len() >= all {
+            None
+        } else {
+            Some(indices)
+        };
+        mark_selected(&mut inner.bt_files, selection.as_deref());
+        inner.only_files = selection;
+    }
+
+    /// 每个文件的已下载字节，来自会话的统计快照。
+    pub fn set_file_progress(&self, progress: &[u64]) {
+        let mut inner = self.inner.lock().unwrap();
+        for file in inner.bt_files.iter_mut() {
+            if let Some(bytes) = progress.get(file.index) {
+                file.downloaded = *bytes;
+            }
+        }
+    }
+
+    /// BT 的进度由会话汇报，速度按与 http 引擎相同的 EMA 口径算，界面不必区分协议。
+    pub fn set_progress(&self, downloaded: u64, total: u64) {
+        let now = Instant::now();
+        let mut inner = self.inner.lock().unwrap();
+        let elapsed = match inner.last_tick {
+            Some(last) => now.duration_since(last).as_secs_f64(),
+            None => 0.0,
+        };
+        inner.last_tick = Some(now);
+        let delta = downloaded.saturating_sub(inner.last_total_bytes);
+        inner.last_total_bytes = downloaded;
+        inner.downloaded = downloaded;
+        if total > 0 {
+            inner.total = total;
+        }
+        if elapsed <= 0.0 {
+            return;
+        }
+        let instant = delta as f64 / elapsed;
+        inner.speed_bps = if inner.speed_bps == 0 {
+            instant as u64
+        } else {
+            (inner.speed_bps as f64 * 0.6 + instant * 0.4) as u64
+        };
+    }
+
+    pub fn file_name(&self) -> String {
+        self.inner.lock().unwrap().file_name.clone()
     }
 
     pub fn part_path(&self) -> PathBuf {
@@ -386,6 +618,8 @@ impl Task {
                 });
             }
         } else {
+            // 没有分片通道的协议（BT）：进度由会话直接汇报
+            downloaded = inner.downloaded;
             for id in 0..inner.channels.len() {
                 let channel = &inner.channels[id];
                 channels.push(ChannelView {
@@ -413,6 +647,7 @@ impl Task {
         TaskView {
             id: self.id.clone(),
             url: self.url.clone(),
+            kind: self.kind,
             file_name: inner.file_name.clone(),
             save_path: inner.save_path.to_string_lossy().to_string(),
             status: inner.status,
@@ -424,6 +659,9 @@ impl Task {
             supports_range: inner.supports_range,
             channels,
             segments,
+            files: inner.bt_files.clone(),
+            info_hash: inner.bt.as_ref().map(|bt| bt.info_hash.clone()),
+            bt_stats: inner.bt_stats,
             error: inner.error.clone(),
         }
     }
