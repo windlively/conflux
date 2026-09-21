@@ -1,0 +1,42 @@
+:host {
+  display: block;
+}
+
+.matrix-block {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.details-title {
+  font: var(--mat-sys-body-small);
+  color: var(--mat-sys-on-surface-variant);
+}
+
+.matrix {
+  position: relative;
+  padding: 8px;
+  border-radius: var(--mat-sys-corner-small);
+  background: var(--mat-sys-surface-container);
+}
+
+.matrix-canvas {
+  display: block;
+  width: 100%;
+  cursor: crosshair;
+}
+
+.matrix-tip {
+  position: absolute;
+  transform: translate(-50%, calc(-100% - 6px));
+  pointer-events: none;
+  white-space: nowrap;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 11px;
+  color: var(--mat-sys-inverse-on-surface);
+  background: var(--mat-sys-inverse-surface);
+  padding: 3px 8px;
+  border-radius: var(--mat-sys-corner-extra-small);
+  box-shadow: var(--mat-sys-level2);
+  z-index: 2;
+}

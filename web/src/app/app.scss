@@ -15,100 +15,6 @@ html:not([data-material]) .app {
   background: var(--mat-sys-surface);
 }
 
-/* ---------- 侧边栏（M3 导航抽屉） ---------- */
-
-.sidebar {
-  width: 240px;
-  flex: 0 0 240px;
-  padding: 8px 12px 14px;
-  display: flex;
-  flex-direction: column;
-  gap: 14px;
-  position: sticky;
-  top: 0;
-  height: 100vh;
-  background: var(--mat-sys-surface-container);
-}
-
-/* 隐藏标题栏后给红黄绿灯让出的空间 */
-.sidebar-top {
-  height: 22px;
-  flex: 0 0 22px;
-}
-
-.brand {
-  display: flex;
-  align-items: baseline;
-  gap: 6px;
-  padding: 0 4px;
-}
-
-.brand-name {
-  font: var(--mat-sys-headline-small);
-  color: var(--mat-sys-on-surface);
-}
-
-.brand-en {
-  font: var(--mat-sys-title-small);
-  color: var(--mat-sys-primary);
-}
-
-.filters {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-}
-
-.filter {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 8px;
-  height: 32px;
-  padding: 0 12px;
-  border: none;
-  border-radius: 999px;
-  background: transparent;
-  color: var(--mat-sys-on-surface-variant);
-  font: var(--mat-sys-label-large);
-  text-align: left;
-  cursor: pointer;
-}
-
-.filter:hover {
-  background: color-mix(in srgb, var(--mat-sys-on-surface) 8%, transparent);
-}
-
-.filter-active,
-.filter-active:hover {
-  background: var(--mat-sys-secondary-container);
-  color: var(--mat-sys-on-secondary-container);
-  font-weight: 600;
-}
-
-.filter-count {
-  color: inherit;
-  opacity: 0.7;
-}
-
-.spacer {
-  flex: 1;
-}
-
-.sidebar-foot {
-  display: flex;
-  flex-direction: column;
-  gap: 3px;
-  padding-top: 10px;
-  border-top: 1px solid var(--mat-sys-outline-variant);
-  font: var(--mat-sys-body-small);
-  color: var(--mat-sys-on-surface-variant);
-}
-
-.path {
-  word-break: break-all;
-}
-
 /* ---------- 主区域 ---------- */
 
 .content {
@@ -117,6 +23,7 @@ html:not([data-material]) .app {
   background: var(--mat-sys-surface);
   overflow-y: auto;
   max-height: 100vh;
+  transition: background-color 0.24s cubic-bezier(0.2, 0, 0, 1);
 }
 
 .content-inner {
@@ -127,34 +34,39 @@ html:not([data-material]) .app {
   max-width: 1040px;
   margin: 0 auto;
   min-height: 100%;
+  transition:
+    padding-top 0.28s cubic-bezier(0.32, 0.72, 0, 1),
+    padding-left 0.28s cubic-bezier(0.32, 0.72, 0, 1);
 }
 
-.page-head h1 {
-  margin: 0 0 6px;
-  font: var(--mat-sys-headline-medium);
-}
-
-.page-head p {
-  margin: 0;
-  max-width: 62ch;
-  color: var(--mat-sys-on-surface-variant);
-}
-
-.panel {
+.message {
   display: flex;
-  flex-direction: column;
-  gap: 14px;
-  padding: 16px;
-  border-radius: var(--mat-sys-corner-large);
-  background: var(--mat-sys-surface-container-low);
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 8px 8px 8px 12px;
+  border-radius: var(--mat-sys-corner-medium);
+  background: var(--mat-sys-error-container);
+  color: var(--mat-sys-on-error-container);
+  font: var(--mat-sys-body-small);
+  white-space: pre-wrap;
+  animation: message-in 0.24s cubic-bezier(0.2, 0, 0, 1);
 }
 
-.panel h2 {
-  margin: 0;
-  font: var(--mat-sys-title-medium);
+.message-out {
+  animation: message-out 0.18s cubic-bezier(0.4, 0, 1, 1) forwards;
 }
 
-.row {
-  display: flex;
-  gap: 8px;
+@keyframes message-in {
+  from {
+    opacity: 0;
+    transform: translateY(-6px);
+  }
+}
+
+@keyframes message-out {
+  to {
+    opacity: 0;
+    transform: translateY(-6px);
+  }
 }

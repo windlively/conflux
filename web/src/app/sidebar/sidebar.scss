@@ -1,0 +1,439 @@
+:host {
+  display: contents;
+}
+
+.sidebar {
+  width: 240px;
+  flex: 0 0 240px;
+  padding: 16px 12px 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  position: sticky;
+  top: 0;
+  height: 100vh;
+  background: var(--mat-sys-surface-container);
+  transition:
+    margin-left 0.28s cubic-bezier(0.32, 0.72, 0, 1),
+    opacity 0.2s ease,
+    background-color 0.24s cubic-bezier(0.2, 0, 0, 1);
+}
+
+.sidebar-collapsed {
+  margin-left: -240px;
+  opacity: 0;
+  pointer-events: none;
+}
+
+/* 侧边栏收起后，收起按钮「变」成悬在内容区左上角的展开按钮，新建任务跟着滑到它下面：
+   等侧边栏滑走一点再淡入，位置与品牌行齐平 */
+.sidebar-fabs {
+  position: fixed;
+  top: 44px;
+  left: 14px;
+  z-index: 20;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.fab {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 34px;
+  height: 34px;
+  padding: 0;
+  border: none;
+  border-radius: var(--mat-sys-corner-full);
+  background: color-mix(in srgb, var(--mat-sys-surface-container-high) 86%, transparent);
+  color: var(--mat-sys-on-surface-variant);
+  box-shadow: var(--mat-sys-level1);
+  backdrop-filter: blur(10px);
+  cursor: pointer;
+  transition:
+    background-color 0.18s cubic-bezier(0.2, 0, 0, 1),
+    color 0.18s cubic-bezier(0.2, 0, 0, 1);
+}
+
+.fab:hover {
+  background: var(--mat-sys-surface-container-highest);
+  color: var(--mat-sys-on-surface);
+}
+
+.fab app-icon {
+  --icon-size: 20px;
+}
+
+/* 新建任务是主操作，跟着展开按钮一起浮出来，但晚一拍落下 */
+.fab-new {
+  background: var(--mat-sys-primary);
+  color: var(--mat-sys-on-primary);
+  animation: fab-drop 0.26s cubic-bezier(0.2, 0, 0, 1) 0.22s both;
+}
+
+.fab-new:hover {
+  background: var(--mat-sys-primary);
+  color: var(--mat-sys-on-primary);
+  filter: brightness(1.08);
+}
+
+@keyframes fab-drop {
+  from {
+    opacity: 0;
+    transform: translateY(-14px);
+  }
+}
+
+.fab-in {
+  animation: fab-in 0.26s cubic-bezier(0.2, 0, 0, 1) 0.1s both;
+}
+
+.fab-out {
+  animation: fab-out 0.18s cubic-bezier(0.4, 0, 1, 1) forwards;
+}
+
+@keyframes fab-in {
+  from {
+    opacity: 0;
+    transform: translateX(-14px) scale(0.8);
+  }
+}
+
+@keyframes fab-out {
+  to {
+    opacity: 0;
+    transform: translateX(-10px) scale(0.8);
+  }
+}
+
+/* Windows 没有红黄绿灯，品牌行贴着窗口顶，浮出按钮也跟着抬高 */
+html[data-platform='windows'] .sidebar-fabs {
+  top: 20px;
+}
+
+/* 隐藏标题栏后给红黄绿灯让出的空间 */
+.sidebar-top {
+  height: 22px;
+  flex: 0 0 22px;
+}
+
+.brand {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  padding: 0 12px 2px;
+}
+
+.brand-name {
+  font: var(--mat-sys-headline-small);
+  color: var(--mat-sys-on-surface);
+}
+
+.brand-en {
+  font: var(--mat-sys-title-small);
+  color: var(--mat-sys-primary);
+  transition: color 0.24s cubic-bezier(0.2, 0, 0, 1);
+}
+
+/* 收起侧边栏的按钮跟着品牌走：文字按基线对齐，按钮自己居中 */
+.brand .collapse {
+  margin-left: auto;
+  align-self: center;
+  --mat-icon-button-state-layer-size: 28px;
+  color: var(--mat-sys-on-surface-variant);
+}
+
+.brand .collapse app-icon {
+  --icon-size: 18px;
+}
+
+/* ---------- 新建任务 ---------- */
+
+.new-task {
+  width: 100%;
+  --mat-button-filled-container-height: 40px;
+  --mat-button-filled-horizontal-padding: 14px;
+}
+
+.new-task app-icon {
+  --icon-size: 20px;
+}
+
+/* ---------- 任务管理 ---------- */
+
+.filters {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.filter {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  height: 36px;
+  padding: 0 12px;
+  border: none;
+  border-radius: var(--mat-sys-corner-full);
+  background: transparent;
+  color: var(--mat-sys-on-surface-variant);
+  font: var(--mat-sys-label-large);
+  text-align: left;
+  cursor: pointer;
+  transition:
+    background-color 0.18s cubic-bezier(0.2, 0, 0, 1),
+    color 0.18s cubic-bezier(0.2, 0, 0, 1),
+    padding-left 0.18s cubic-bezier(0.2, 0, 0, 1);
+}
+
+.filter app-icon {
+  --icon-size: 18px;
+  color: var(--mat-sys-on-surface-variant);
+  transition: color 0.18s cubic-bezier(0.2, 0, 0, 1);
+}
+
+.filter-label {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.filter:hover {
+  background: color-mix(in srgb, var(--mat-sys-on-surface) 8%, transparent);
+}
+
+.filter-active,
+.filter-active:hover {
+  padding-left: 18px;
+  background: var(--mat-sys-secondary-container);
+  color: var(--mat-sys-on-secondary-container);
+  font-weight: 600;
+}
+
+.filter-active app-icon {
+  color: var(--mat-sys-on-secondary-container);
+}
+
+.filter-count {
+  color: inherit;
+  opacity: 0.7;
+  font-variant-numeric: tabular-nums;
+}
+
+/* 三个分组都展开、窗口又矮的时候：分组区自己滚动，
+   品牌行、「新建任务」与底部信息留在原位，不会被 flex 压缩 */
+.sidebar-nav {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  overflow-y: auto;
+}
+
+/* 侧边栏是纵向 flex，子项默认允许收缩——内容一多就会把按钮和品牌行挤扁 */
+.sidebar > :not(.sidebar-nav) {
+  flex-shrink: 0;
+}
+
+.spacer {
+  flex: 1;
+}
+
+/* ---------- 设置 ---------- */
+
+/* 不做卡片底色：靠细线分组与统一的行高、左右内缘撑出秩序 */
+.settings {
+  display: flex;
+  flex-direction: column;
+}
+
+.setting {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 10px 0;
+}
+
+.setting + .setting {
+  border-top: 1px solid var(--mat-sys-outline-variant);
+}
+
+.setting:first-child {
+  padding-top: 4px;
+}
+
+.setting:last-child {
+  padding-bottom: 0;
+}
+
+.setting-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  min-height: 26px;
+}
+
+.setting-label {
+  font: var(--mat-sys-label-medium);
+  color: var(--mat-sys-on-surface-variant);
+}
+
+/* 设置行里的按钮都收小一号，免得「选择」看着像条链接、加减号抢镜 */
+.setting .mini {
+  --mat-button-text-container-height: 26px;
+  --mat-button-text-horizontal-padding: 8px;
+  --mat-button-text-label-text-size: 12px;
+  color: var(--mat-sys-primary);
+}
+
+.appearance {
+  width: 100%;
+  --mat-button-toggle-height: 30px;
+  --mat-button-toggle-divider-color: var(--mat-sys-outline-variant);
+}
+
+.appearance mat-button-toggle {
+  flex: 1 1 0;
+  min-width: 0;
+  font: var(--mat-sys-label-small);
+  white-space: nowrap;
+}
+
+.appearance app-icon {
+  --icon-size: 14px;
+}
+
+/* 组件自带的 16px 段内边距在三段控件里放不下，收到 5px；
+   侧边栏只有 240px，这里必须精确控制 */
+.appearance ::ng-deep .mat-button-toggle-label-content {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 0 5px;
+}
+
+/* 三段控件里文字与图标挤在窄栏里，把组件自带的内边距收一收 */
+.appearance ::ng-deep .mat-button-toggle-button {
+  padding: 0 6px;
+}
+
+.setting-value {
+  font: var(--mat-sys-body-small);
+  color: var(--mat-sys-on-surface-variant);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* 说明收进「i」按钮，点一下才弹出来，行里不常驻文字 */
+.setting .info {
+  --mat-icon-button-state-layer-size: 20px;
+  --mat-icon-button-icon-size: 14px;
+  margin-inline-start: -2px;
+  opacity: 0.7;
+  color: var(--mat-sys-on-surface-variant);
+}
+
+.setting .info:hover {
+  opacity: 1;
+}
+
+.stepper {
+  display: flex;
+  align-items: center;
+}
+
+/* 加减号是文字不是图标：字号跟着图标槽位一起收 */
+.stepper button {
+  --mat-icon-button-state-layer-size: 26px;
+  --mat-icon-button-icon-size: 16px;
+  color: var(--mat-sys-on-surface-variant);
+}
+
+.stepper-value {
+  min-width: 20px;
+  text-align: center;
+  font: var(--mat-sys-label-large);
+  font-variant-numeric: tabular-nums;
+  color: var(--mat-sys-on-surface);
+}
+
+/* ---------- 主题色 ---------- */
+
+.accents {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  padding: 6px 0 2px;
+}
+
+.accent {
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  border: none;
+  border-radius: var(--mat-sys-corner-full);
+  background: var(--dot);
+  cursor: pointer;
+  box-shadow: 0 0 0 0 transparent;
+  transition:
+    transform 0.18s cubic-bezier(0.2, 0, 0, 1),
+    box-shadow 0.18s cubic-bezier(0.2, 0, 0, 1);
+}
+
+.accent:hover {
+  transform: scale(1.12);
+}
+
+.accent-active {
+  box-shadow: 0 0 0 2px var(--mat-sys-surface-container), 0 0 0 4px var(--dot);
+}
+
+/* ---------- 速度与存储 ---------- */
+
+.sidebar-speed {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  height: 40px;
+  padding: 0 14px;
+  border-radius: var(--mat-sys-corner-medium);
+  background: var(--mat-sys-surface-variant);
+  font: var(--mat-sys-label-medium);
+  color: var(--mat-sys-on-surface-variant);
+  animation: speed-in 0.24s cubic-bezier(0.2, 0, 0, 1);
+}
+
+.mono {
+  font-variant-numeric: tabular-nums;
+  color: var(--mat-sys-on-surface);
+}
+
+@keyframes speed-in {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+}
+
+.sidebar-foot {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  padding-top: 10px;
+  border-top: 1px solid var(--mat-sys-outline-variant);
+  font: var(--mat-sys-body-small);
+  color: var(--mat-sys-on-surface-variant);
+}
+
+.sidebar-foot .warn {
+  color: #b26a00;
+}
+
+.path {
+  word-break: break-all;
+}

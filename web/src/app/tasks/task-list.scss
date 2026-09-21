@@ -1,0 +1,52 @@
+.tasks {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+/* 新任务淡入上浮，移除时淡出，列表变化不再「啪」地跳一下 */
+.card-in {
+  animation: task-card-in 0.28s cubic-bezier(0.2, 0, 0, 1);
+}
+
+.card-out {
+  animation: task-card-out 0.2s cubic-bezier(0.4, 0, 1, 1) forwards;
+}
+
+@keyframes task-card-in {
+  from {
+    opacity: 0;
+    transform: translateY(8px) scale(0.995);
+  }
+}
+
+@keyframes task-card-out {
+  to {
+    opacity: 0;
+    transform: translateY(-6px) scale(0.995);
+  }
+}
+
+.empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+  padding: 72px 0;
+  text-align: center;
+  color: var(--mat-sys-on-surface-variant);
+}
+
+.empty-glyph {
+  display: grid;
+  place-items: center;
+  width: 54px;
+  height: 54px;
+  border-radius: 50%;
+  font-size: 22px;
+  background: var(--mat-sys-primary-container);
+  color: var(--mat-sys-on-primary-container);
+}

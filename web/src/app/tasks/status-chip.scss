@@ -1,0 +1,56 @@
+:host {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 2px 10px;
+  border-radius: var(--mat-sys-corner-full);
+  font: var(--mat-sys-label-medium);
+  font-weight: 600;
+  white-space: nowrap;
+  background: var(--mat-sys-surface-container-highest);
+  color: var(--mat-sys-on-surface-variant);
+  transition:
+    background-color 0.24s cubic-bezier(0.2, 0, 0, 1),
+    color 0.24s cubic-bezier(0.2, 0, 0, 1);
+}
+
+:host([data-tone='accent']) {
+  background: var(--tone-accent-container);
+  color: var(--tone-accent-on-container);
+}
+
+:host([data-tone='green']) {
+  background: var(--tone-green-container);
+  color: var(--tone-on-green-container);
+}
+
+:host([data-tone='red']) {
+  background: var(--mat-sys-error-container);
+  color: var(--mat-sys-on-error-container);
+}
+
+:host([data-tone='orange']) {
+  background: var(--tone-orange-container);
+  color: var(--tone-on-orange-container);
+}
+
+/* 通道表里的徽标更小一号 */
+:host(.chip-channel) {
+  padding: 1px 8px;
+  font: var(--mat-sys-label-small);
+}
+
+.spinner {
+  width: 10px;
+  height: 10px;
+  border: 1.5px solid currentColor;
+  border-right-color: transparent;
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}

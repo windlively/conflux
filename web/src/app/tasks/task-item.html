@@ -1,0 +1,159 @@
+@let item = task();
+
+<article class="task">
+  <div class="task-head">
+    <div class="task-title">
+      <span class="task-name" [title]="item.savePath">{{ item.fileName }}</span>
+      @if (isBt()) {
+        <span class="kind-chip">{{ kindLabel() }}</span>
+      }
+      <app-status-chip
+        [state]="item.status"
+        [label]="statusLabel()"
+        [spinner]="item.status === 'probing'"
+      />
+      <span class="spacer"></span>
+      <span class="task-percent">{{ percentLabel() }}</span>
+    </div>
+    <span class="task-host">{{ item.url }}</span>
+  </div>
+
+  <div class="progress-block">
+    @if (segments().length > 1) {
+      <div class="segments">
+        @for (segment of segments(); track segment.index) {
+          <app-segment-bar
+            [grow]="segment.grow"
+            [ratio]="segment.ratio"
+            [state]="segment.state"
+            [title]="segment.title"
+          />
+        }
+      </div>
+    } @else {
+      <!-- 单连接（或只有一个分片）时没有分片分布，退化成一条整体进度条 -->
+      <app-segment-bar
+        [grow]="1"
+        [ratio]="overall() === null ? null : overall()! / 100"
+        [state]="item.status"
+        [title]="item.fileName"
+      />
+    }
+  </div>
+
+  <div class="task-stats">
+    <span>{{ stats().size }}</span>
+    <span>{{ stats().speed }}</span>
+    <span>{{ stats().eta }}</span>
+    <span>{{ stats().connections }}</span>
+    @if (stats().files; as files) {
+      <span>{{ files }}</span>
+    }
+  </div>
+
+  @if (item.error) {
+    <div class="task-error">{{ item.error }}</div>
+  }
+
+  <div class="task-actions">
+    @if (canPause()) {
+      <button matButton (click)="pause(item.id)"><app-icon name="pause" />暂停</button>
+    }
+    @if (canResume()) {
+      <button matButton (click)="resume(item.id)"><app-icon name="play" />继续</button>
+    }
+    @if (canPause()) {
+      <button matButton (click)="cancel(item.id)"><app-icon name="stop" />取消</button>
+    }
+    @if (hasFile()) {
+      <button matButton (click)="reveal(item.savePath)"><app-icon name="folder" />打开所在目录</button>
+    }
+    @if (canExpand()) {
+      <button matButton (click)="expanded.set(!expanded())">
+        <app-icon [name]="expanded() ? 'collapse' : 'expand'" />
+        {{ expanded() ? '收起详情' : '展开详情' }}
+      </button>
+    }
+    <span class="spacer"></span>
+    <button matButton (click)="remove(item.id)"><app-icon name="close" />移除</button>
+    <app-confirm-button
+      label="删除文件"
+      confirmLabel="确认删除？"
+      icon="trash"
+      (confirmed)="remove(item.id, true)"
+    />
+  </div>
+
+  @if (expanded() && canExpand()) {
+    <div class="details" animate.enter="details-in" animate.leave="details-out">
+      @if (btDetails(); as bt) {
+        <div class="bt-details">
+          <div class="details-title">种子信息</div>
+          <div class="bt-grid">
+            <span class="bt-label">种子标识</span>
+            <span class="mono hash">{{ bt.infoHash }}</span>
+            <span class="bt-label">连接</span>
+            <span class="mono">{{ bt.peers }}</span>
+            <span class="bt-label">已上传</span>
+            <span class="mono">{{ bt.uploaded }}</span>
+          </div>
+        </div>
+      }
+
+      @if (hasFiles()) {
+        <div class="file-details">
+          <div class="details-title">文件（取消勾选的文件不会再下）</div>
+          <app-file-picker
+            [files]="fileList()"
+            (toggle)="toggleFile($event)"
+            (setAll)="setAllFiles($event)"
+          />
+        </div>
+      }
+
+      @if (hasChannels()) {
+        <table class="channels">
+          <thead>
+            <tr>
+              <th>通道</th>
+              <th>当前分片</th>
+              <th class="col-progress">分片进度</th>
+              <th>速度</th>
+              <th>状态</th>
+            </tr>
+          </thead>
+          <tbody>
+            @for (channel of channels(); track channel.id) {
+              <tr>
+                <td class="mono">{{ channel.label }}</td>
+                <td class="mono">{{ channel.segmentLabel }}</td>
+                <td>
+                  <app-segment-bar
+                    [grow]="channel.grow"
+                    [ratio]="channel.ratio"
+                    [state]="channel.state"
+                  />
+                  <span class="mono small">{{ channel.bytes }}</span>
+                </td>
+                <td class="mono">{{ channel.speed }}</td>
+                <td>
+                  <app-status-chip
+                    variant="channel"
+                    [state]="channel.state"
+                    [label]="channel.stateLabel"
+                    [spinner]="channel.spinner"
+                  />
+                  @if (channel.retries > 0) {
+                    <span class="retry">重试 {{ channel.retries }}</span>
+                  }
+                </td>
+              </tr>
+            }
+          </tbody>
+        </table>
+      }
+
+      <app-progress-matrix [task]="item" />
+    </div>
+  }
+</article>

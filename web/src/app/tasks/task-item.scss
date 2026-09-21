@@ -1,0 +1,213 @@
+:host {
+  display: block;
+}
+
+.task {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 15px 16px;
+  border-radius: var(--mat-sys-corner-large);
+  background: var(--mat-sys-surface-container-low);
+  transition: background-color 0.24s cubic-bezier(0.2, 0, 0, 1);
+}
+
+.task-head {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.task-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.task-name {
+  font: var(--mat-sys-title-small);
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.spacer {
+  flex: 1;
+}
+
+.task-percent {
+  font: var(--mat-sys-title-small);
+  font-variant-numeric: tabular-nums;
+  color: var(--mat-sys-on-surface);
+}
+
+.kind-chip {
+  flex-shrink: 0;
+  padding: 1px 6px;
+  border-radius: var(--mat-sys-corner-extra-small);
+  background: var(--mat-sys-surface-container-highest);
+  color: var(--mat-sys-on-surface-variant);
+  font: var(--mat-sys-label-small);
+  font-size: 10px;
+  letter-spacing: 0.02em;
+}
+
+.task-host {
+  font: var(--mat-sys-body-small);
+  color: var(--mat-sys-on-surface-variant);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.progress-block {
+  padding: 2px 0;
+}
+
+.segments {
+  display: flex;
+  gap: 3px;
+}
+
+.task-stats {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 16px;
+  font: var(--mat-sys-body-small);
+  color: var(--mat-sys-on-surface-variant);
+  font-variant-numeric: tabular-nums;
+}
+
+.task-error {
+  padding: 8px 10px;
+  border-radius: var(--mat-sys-corner-small);
+  background: var(--mat-sys-error-container);
+  color: var(--mat-sys-on-error-container);
+  font: var(--mat-sys-body-small);
+}
+
+/* M3 文字按钮自带 12px 横向内边距，与 React 版一样让整行随之内缩，
+   不要用负外边距去抵消：负边距会把整页撑出横向滚动条 */
+.task-actions {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  flex-wrap: wrap;
+}
+
+.details {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding-top: 12px;
+  border-top: 1px solid var(--mat-sys-outline-variant);
+}
+
+.details-in {
+  animation: details-in 0.26s cubic-bezier(0.2, 0, 0, 1);
+}
+
+.details-out {
+  animation: details-out 0.18s cubic-bezier(0.4, 0, 1, 1) forwards;
+}
+
+@keyframes details-in {
+  from {
+    opacity: 0;
+    transform: translateY(-6px);
+  }
+}
+
+@keyframes details-out {
+  to {
+    opacity: 0;
+    transform: translateY(-6px);
+  }
+}
+
+.bt-details {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.details-title {
+  font: var(--mat-sys-body-small);
+  color: var(--mat-sys-on-surface-variant);
+}
+
+.bt-grid {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 5px 14px;
+  align-items: baseline;
+  font: var(--mat-sys-body-small);
+}
+
+.bt-label {
+  color: var(--mat-sys-on-surface-variant);
+}
+
+/* 40 位十六进制串整段折行比省略号有用，用户常要复制它去别处比对 */
+.bt-grid .hash {
+  overflow-wrap: anywhere;
+}
+
+.file-details {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.channels {
+  width: 100%;
+  border-collapse: collapse;
+  font: var(--mat-sys-body-small);
+}
+
+.channels th {
+  text-align: left;
+  font-weight: 500;
+  color: var(--mat-sys-on-surface-variant);
+  padding: 4px 8px;
+  border-bottom: 1px solid var(--mat-sys-outline-variant);
+}
+
+.channels tbody tr:hover {
+  background: var(--mat-sys-surface-container);
+}
+
+.channels td {
+  padding: 7px 8px;
+  border-bottom: 1px solid var(--mat-sys-outline-variant);
+  vertical-align: middle;
+}
+
+.channels tbody tr:last-child td {
+  border-bottom: none;
+}
+
+.col-progress {
+  width: 42%;
+}
+
+.mono {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-variant-numeric: tabular-nums;
+}
+
+.small {
+  display: block;
+  margin-top: 3px;
+  font-size: 11px;
+  color: var(--mat-sys-on-surface-variant);
+}
+
+.retry {
+  margin-left: 6px;
+  font-size: 11px;
+  color: #b26a00;
+}

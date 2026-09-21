@@ -1,3 +1,5 @@
+@use 'sass:color';
+@use 'sass:map';
 @use '@angular/material' as mat;
 
 /* 系统字体栈：沿用各平台自己的界面字体（macOS 的 SF、Windows 的 Segoe UI），不打包 Roboto */
@@ -9,22 +11,35 @@ $system-font:
   'Microsoft YaHei',
   sans-serif;
 
-html {
-  color-scheme: light;
+/* 可选主题色：M3 基准调色板，键名与 core/settings.ts 的 ACCENTS 一致 */
+$accents: (
+  'violet': mat.$violet-palette,
+  'azure': mat.$azure-palette,
+  'cyan': mat.$cyan-palette,
+  'spring-green': mat.$spring-green-palette,
+  'orange': mat.$orange-palette,
+  'rose': mat.$rose-palette,
+);
 
-  @include mat.theme(
-    (
-      color: (
-        primary: mat.$violet-palette,
-        theme-type: light,
-      ),
-      typography: (
-        plain-family: $system-font,
-        brand-family: $system-font,
-      ),
-      density: -2,
-    )
-  );
+/* 浅色与深色各生成一整套令牌；`data-theme` 由首帧脚本与 Settings 一起维护 */
+@each $theme, $type in (light: light, dark: dark) {
+  html[data-theme='#{$theme}'] {
+    color-scheme: #{$theme};
+
+    @include mat.theme(
+      (
+        color: (
+          primary: mat.$violet-palette,
+          theme-type: $type,
+        ),
+        typography: (
+          plain-family: $system-font,
+          brand-family: $system-font,
+        ),
+        density: -2,
+      )
+    );
+  }
 }
 
 html,
@@ -38,10 +53,152 @@ body {
   -webkit-font-smoothing: antialiased;
 }
 
-/* 有系统材质时不要再盖一层厚底：只压一层薄雾保文字对比度 */
-html[data-material='glass'] .sidebar,
-html[data-material='vibrancy'] .sidebar {
-  background: rgba(250, 250, 252, 0.34);
+/* Angular Material 也按 border-box 布局，缺了它带内边距的定宽盒子（侧边栏、卡片）
+   会各自胖一圈，页面随之出现横向溢出与多余滚动条 */
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: rgba(120, 120, 128, 0.32);
+  border: 2px solid transparent;
+  background-clip: content-box;
+  border-radius: 6px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(120, 120, 128, 0.5);
+  background-clip: content-box;
+}
+
+/* Material 把按钮内容全包在 .mdc-button__label 里，它是个 inline 盒子：
+   图标按内联基线对齐，18px 的方块底边压在文字基线上，看着就比文字高一截。
+   改成居中的 flex 行，图标与文字回到同一条中线上，间距用 gap 给 */
+.mdc-button__label {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+/* 图标按钮是 inline-block + 24px 字号的文本行盒，纯图标同样会被顶偏，
+   换成 flex 居中（内边距仍是 8px，圆形底不变） */
+.mat-mdc-icon-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+/* 进度矩阵是 canvas，取色不能走 var()，组件会把这几个值读出去用。
+   注意不能让这些变量指向 light-dark()：自定义属性会原样保留那段函数，
+   canvas 拿到的是没解析的字符串，格子会画不出颜色——按主题各写一份字面值。 */
+:root {
+  --matrix-active-rgb: 103, 80, 164;
+}
+
+html[data-theme='light'] {
+  --matrix-done: #2e7d32;
+  --matrix-held: #79747e;
+  --matrix-track: rgba(120, 120, 128, 0.16);
+  --tone-green-container: #cdeccd;
+  --tone-on-green-container: #10380f;
+  --tone-orange-container: #ffddb3;
+  --tone-on-orange-container: #3d2b00;
+  --tone-orange: #b26a00;
+}
+
+html[data-theme='dark'] {
+  /* 深色底上纯绿的对比度太冲，用一支降饱和的薄荷绿（浅色主题仍用 #2e7d32） */
+  --matrix-done: #81c995;
+  --matrix-held: #9e9aa7;
+  --matrix-track: rgba(190, 190, 200, 0.22);
+  --tone-green-container: #14401a;
+  --tone-on-green-container: #a6f0ad;
+  --tone-orange-container: #4a3000;
+  --tone-on-orange-container: #ffd9a6;
+  --tone-orange: #ffb95c;
+}
+
+:root {
+  --tone-accent-container: var(--mat-sys-primary-container);
+  --tone-accent-on-container: var(--mat-sys-on-primary-container);
+}
+
+/* 主题色的色点：每个可选色都要有常驻变量（不能只定义当前生效的那个），
+   否则侧边栏里除当前色以外的点拿不到颜色 */
+@each $name, $palette in $accents {
+  :root {
+    --accent-#{$name}: #{map.get($palette, 40)};
+  }
+}
+
+/* 主题色：只换主色相关的角色令牌，表面与中性色保持同一套，
+   组件令牌（--mat-button-* 等）指向 --mat-sys-primary，于是按钮、进度条、
+   选中药丸、状态徽标会一起跟着换；深色用 80/20/30/90 这几档，与 M3 的深色映射一致 */
+@each $name, $palette in $accents {
+  $light-primary: map.get($palette, 40);
+
+  html[data-theme='light'][data-accent='#{$name}'] {
+    --mat-sys-primary: #{$light-primary};
+    --mat-sys-on-primary: #{map.get($palette, 100)};
+    --mat-sys-primary-container: #{map.get($palette, 90)};
+    --mat-sys-on-primary-container: #{map.get($palette, 10)};
+    --mat-sys-secondary-container: #{map.get($palette, 90)};
+    --mat-sys-on-secondary-container: #{map.get($palette, 10)};
+    --mat-sys-surface-tint: #{$light-primary};
+    --mat-sys-inverse-primary: #{map.get($palette, 80)};
+    --matrix-active-rgb: #{color.channel($light-primary, 'red', $space: rgb)}, #{color.channel(
+        $light-primary,
+        'green',
+        $space: rgb
+      )}, #{color.channel($light-primary, 'blue', $space: rgb)};
+  }
+
+  $dark-primary: map.get($palette, 80);
+
+  html[data-theme='dark'][data-accent='#{$name}'] {
+    --mat-sys-primary: #{$dark-primary};
+    --mat-sys-on-primary: #{map.get($palette, 20)};
+    --mat-sys-primary-container: #{map.get($palette, 30)};
+    --mat-sys-on-primary-container: #{map.get($palette, 90)};
+    --mat-sys-secondary-container: #{map.get($palette, 30)};
+    --mat-sys-on-secondary-container: #{map.get($palette, 90)};
+    --mat-sys-surface-tint: #{$dark-primary};
+    --mat-sys-inverse-primary: #{map.get($palette, 40)};
+    --matrix-active-rgb: #{color.channel($dark-primary, 'red', $space: rgb)}, #{color.channel(
+        $dark-primary,
+        'green',
+        $space: rgb
+      )}, #{color.channel($dark-primary, 'blue', $space: rgb)};
+  }
+}
+
+/* 有系统材质时不要盖厚底，但侧边栏得压住底色：六成不透明的表面色在
+   深色壁纸与浅色壁纸下都能保住文字的对比度，其余交给系统材质本身 */
+html[data-theme='light'][data-material='glass'] .sidebar,
+html[data-theme='light'][data-material='vibrancy'] .sidebar,
+html[data-theme='light'][data-material='mica'] .sidebar,
+html[data-theme='light'][data-material='acrylic'] .sidebar,
+html[data-theme='light'][data-material='blur'] .sidebar {
+  background: rgba(243, 237, 247, 0.62);
+}
+
+html[data-theme='dark'][data-material='glass'] .sidebar,
+html[data-theme='dark'][data-material='vibrancy'] .sidebar,
+html[data-theme='dark'][data-material='mica'] .sidebar,
+html[data-theme='dark'][data-material='acrylic'] .sidebar,
+html[data-theme='dark'][data-material='blur'] .sidebar {
+  background: rgba(33, 31, 38, 0.62);
 }
 
 /* 隐藏标题栏后，这块区域负责拖动窗口：与系统标题栏同高、覆盖整窗宽度 */
@@ -66,4 +223,9 @@ html[data-platform='windows'] .sidebar-top {
 /* macOS 隐藏标题栏后红黄绿灯浮在内容之上，侧边栏折叠时给内容区让位 */
 html[data-platform='macos'].sidebar-hidden .content-inner {
   padding-top: 36px;
+}
+
+/* 折叠后左上角浮出展开按钮，内容区让出它占的那条空隙 */
+html.sidebar-hidden .content-inner {
+  padding-left: 58px;
 }

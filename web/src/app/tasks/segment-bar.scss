@@ -1,0 +1,29 @@
+:host {
+  display: block;
+  min-width: 0;
+}
+
+mat-progress-bar {
+  --mat-progress-bar-track-color: var(--mat-sys-surface-container-highest);
+  --mat-progress-bar-active-indicator-height: 6px;
+  --mat-progress-bar-track-height: 6px;
+  --mat-progress-bar-active-indicator-color: var(--mat-sys-primary);
+  border-radius: var(--mat-sys-corner-full);
+  overflow: hidden;
+}
+
+mat-progress-bar[data-tone='green'] {
+  --mat-progress-bar-active-indicator-color: var(--matrix-done);
+}
+
+mat-progress-bar[data-tone='red'] {
+  --mat-progress-bar-active-indicator-color: var(--mat-sys-error);
+}
+
+mat-progress-bar[data-tone='orange'] {
+  --mat-progress-bar-active-indicator-color: var(--tone-orange);
+}
+
+mat-progress-bar[data-tone='neutral'] {
+  --mat-progress-bar-active-indicator-color: var(--mat-sys-outline);
+}

@@ -1,0 +1,89 @@
+:host {
+  display: block;
+  font: var(--mat-sys-body-small);
+}
+
+.picker-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 32px;
+  color: var(--mat-sys-on-surface-variant);
+}
+
+.summary {
+  flex: 1;
+  min-width: 0;
+}
+
+.file-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  max-height: 220px;
+  overflow-y: auto;
+  border-top: 1px solid var(--mat-sys-outline-variant);
+}
+
+.file-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 2px;
+  border-bottom: 1px solid var(--mat-sys-outline-variant);
+}
+
+.file-row:last-child {
+  border-bottom: none;
+}
+
+/* 没勾选的行压暗一档，一眼看出哪些不会下 */
+.file-row.unselected .file-main,
+.file-row.unselected .file-size {
+  opacity: 0.55;
+}
+
+.file-main {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.file-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.file-progress {
+  height: 3px;
+  border-radius: 2px;
+  background: var(--mat-sys-surface-container-highest);
+  overflow: hidden;
+}
+
+.file-progress .bar {
+  display: block;
+  height: 100%;
+  border-radius: 2px;
+  background: var(--mat-sys-primary);
+  transition: width 0.24s cubic-bezier(0.2, 0, 0, 1);
+}
+
+.file-size {
+  flex-shrink: 0;
+  color: var(--mat-sys-on-surface-variant);
+}
+
+.mono {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-variant-numeric: tabular-nums;
+}
+
+/* Material 的勾选框自带一圈内边距，清单里要紧凑些 */
+mat-checkbox {
+  --mat-checkbox-touch-target-size: 32px;
+  --mat-checkbox-state-layer-size: 32px;
+}

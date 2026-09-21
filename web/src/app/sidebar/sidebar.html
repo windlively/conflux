@@ -1,0 +1,221 @@
+<aside class="sidebar" [class.sidebar-collapsed]="!ui.sidebarOpen()">
+  <div class="sidebar-top"></div>
+
+  <div class="brand">
+    <span class="brand-name">川流</span>
+    <span class="brand-en">Conflux</span>
+    <button
+      matIconButton
+      class="collapse"
+      aria-label="收起侧边栏"
+      title="收起侧边栏"
+      (click)="ui.toggleSidebar()"
+    >
+      <app-icon name="chevronLeft" />
+    </button>
+  </div>
+
+  <button matButton="filled" class="new-task" (click)="openNewTask()">
+    <app-icon name="add" />新建任务
+  </button>
+
+  <div class="sidebar-nav">
+    <app-nav-section storageKey="tasks" title="任务管理" icon="checklist">
+      <nav class="filters">
+        @for (item of store.counts(); track item.key) {
+          <button
+            type="button"
+            class="filter"
+            [class.filter-active]="item.key === store.filter()"
+            (click)="store.filter.set(item.key)"
+          >
+            <app-icon [name]="item.icon" />
+            <span class="filter-label">{{ item.label }}</span>
+            <span class="filter-count">{{ item.count }}</span>
+          </button>
+        }
+      </nav>
+    </app-nav-section>
+
+    <app-nav-section storageKey="settings" title="设置" icon="tune">
+      <div class="settings">
+        <div class="setting">
+          <div class="setting-row">
+            <span class="setting-label">默认下载目录</span>
+            <button matButton class="mini" (click)="pickDir()">选择</button>
+          </div>
+          <div class="setting-value" [title]="settings.downloadDir() || '跟随系统默认目录'">
+            {{ settings.downloadDir() || '跟随系统默认' }}
+          </div>
+        </div>
+
+        <div class="setting">
+          <div class="setting-row">
+            <span class="setting-label">默认连接数</span>
+            <button
+              matIconButton
+              class="info"
+              type="button"
+              aria-label="默认连接数说明"
+              matTooltip="新建任务默认用这么多条连接，弹窗里可以改"
+              matTooltipPosition="right"
+              #defaultInfo="matTooltip"
+              (click)="defaultInfo.show()"
+            >
+              <app-icon name="info" />
+            </button>
+            <span class="spacer"></span>
+            <span class="stepper">
+              <button matIconButton aria-label="减少默认连接数" (click)="stepConnections(-1)">
+                −
+              </button>
+              <span class="stepper-value">{{ settings.connections() }}</span>
+              <button matIconButton aria-label="增加默认连接数" (click)="stepConnections(1)">
+                +
+              </button>
+            </span>
+          </div>
+        </div>
+
+        <div class="setting">
+          <div class="setting-row">
+            <span class="setting-label">单任务上限</span>
+            <button
+              matIconButton
+              class="info"
+              type="button"
+              aria-label="单任务上限说明"
+              matTooltip="一个任务最多能开这么多条连接，新建任务弹窗里填不过它"
+              matTooltipPosition="right"
+              #taskInfo="matTooltip"
+              (click)="taskInfo.show()"
+            >
+              <app-icon name="info" />
+            </button>
+            <span class="spacer"></span>
+            <span class="stepper">
+              <button matIconButton aria-label="减少单任务上限" (click)="stepMaxTaskConnections(-1)">
+                −
+              </button>
+              <span class="stepper-value">{{ settings.maxTaskConnections() }}</span>
+              <button matIconButton aria-label="增加单任务上限" (click)="stepMaxTaskConnections(1)">
+                +
+              </button>
+            </span>
+          </div>
+        </div>
+
+        <div class="setting">
+          <div class="setting-row">
+            <span class="setting-label">总连接数上限</span>
+            <button
+              matIconButton
+              class="info"
+              type="button"
+              aria-label="总连接数上限说明"
+              matTooltip="所有任务合计，同时在用的连接不超过这么多条，超出的通道排队等空位"
+              matTooltipPosition="right"
+              #totalInfo="matTooltip"
+              (click)="totalInfo.show()"
+            >
+              <app-icon name="info" />
+            </button>
+            <span class="spacer"></span>
+            <span class="stepper">
+              <button matIconButton aria-label="减少总连接数上限" (click)="stepMaxTotalConnections(-1)">
+                −
+              </button>
+              <span class="stepper-value">{{ settings.maxTotalConnections() }}</span>
+              <button matIconButton aria-label="增加总连接数上限" (click)="stepMaxTotalConnections(1)">
+                +
+              </button>
+            </span>
+          </div>
+        </div>
+
+        <div class="setting">
+          <div class="setting-row">
+            <span class="setting-label">外观</span>
+          </div>
+          <mat-button-toggle-group
+            class="appearance"
+            aria-label="外观"
+            hideSingleSelectionIndicator
+            [value]="settings.themeMode()"
+            (change)="settings.setThemeMode($event.value)"
+          >
+            @for (mode of themeModes; track mode.key) {
+              <mat-button-toggle [value]="mode.key" [title]="mode.full" [attr.aria-label]="mode.full">
+                <app-icon [name]="mode.icon" />{{ mode.label }}
+              </mat-button-toggle>
+            }
+          </mat-button-toggle-group>
+        </div>
+      </div>
+    </app-nav-section>
+
+    <app-nav-section storageKey="theme" title="主题色" icon="palette">
+      <div class="accents">
+        @for (accent of accents; track accent.key) {
+          <button
+            type="button"
+            class="accent"
+            [class.accent-active]="settings.accent() === accent.key"
+            [style.--dot]="'var(--accent-' + accent.key + ')'"
+            [attr.aria-label]="accent.label"
+            [title]="accent.label"
+            (click)="settings.setAccent(accent.key)"
+          ></button>
+        }
+      </div>
+    </app-nav-section>
+
+    <div class="spacer"></div>
+  </div>
+
+  @if (store.totalSpeed() > 0) {
+    <div class="sidebar-speed">
+      <span>总速度</span>
+      <span class="mono">{{ totalSpeedLabel() }}</span>
+    </div>
+  }
+
+  <div class="sidebar-foot">
+    @if (store.storage(); as storage) {
+      @if (storage.available) {
+        <div>任务数据：结构版本 {{ storage.schemaVersion }}</div>
+        <div class="path" [title]="storage.path ?? ''">{{ storage.path }}</div>
+      } @else {
+        <div class="warn">{{ storage.message ?? '未启用任务持久化' }}</div>
+        @if (storage.path) {
+          <div class="path" [title]="storage.path">预期位置 {{ storage.path }}</div>
+        }
+      }
+    } @else {
+      <div>读取存储状态…</div>
+    }
+  </div>
+</aside>
+
+@if (!ui.sidebarOpen()) {
+  <div class="sidebar-fabs" animate.enter="fab-in" animate.leave="fab-out">
+    <button
+      type="button"
+      class="fab"
+      aria-label="展开侧边栏"
+      title="展开侧边栏"
+      (click)="ui.toggleSidebar()"
+    >
+      <app-icon name="chevronRight" />
+    </button>
+    <button
+      type="button"
+      class="fab fab-new"
+      aria-label="新建任务"
+      title="新建任务"
+      (click)="openNewTask()"
+    >
+      <app-icon name="add" />
+    </button>
+  </div>
+}

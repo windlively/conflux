@@ -1,0 +1,86 @@
+<h2 mat-dialog-title>新建下载任务</h2>
+
+<mat-dialog-content class="dialog-body">
+  <!-- 多行输入框的浮动标签会被自己的边框切掉一半，位置对不齐，这里只留占位提示 -->
+  <mat-form-field appearance="outline" subscriptSizing="dynamic">
+    <textarea
+      matInput
+      rows="3"
+      aria-label="下载链接"
+      placeholder="粘贴下载链接：http/https 地址或 magnet 磁力链接，也可粘贴 .torrent 文件路径；支持一次多行批量添加"
+      [value]="urls()"
+      (input)="onUrls($event)"
+    ></textarea>
+    @if (singleMagnet()) {
+      <mat-hint>可以先预览一下这个磁力里有哪些文件，再决定下哪几个</mat-hint>
+    }
+  </mat-form-field>
+
+  <div class="dir-row">
+    <mat-form-field appearance="outline" subscriptSizing="dynamic" class="grow">
+      <mat-label>保存目录</mat-label>
+      <input
+        matInput
+        placeholder="留空则用系统默认下载目录"
+        [value]="dir()"
+        (input)="onDir($event)"
+      />
+    </mat-form-field>
+    <button matButton (click)="pickDir()"><app-icon name="folder" />选择</button>
+  </div>
+
+  <mat-form-field appearance="outline" subscriptSizing="dynamic" class="connections">
+    <mat-label>连接数</mat-label>
+    <input
+      matInput
+      type="number"
+      min="1"
+      [max]="settings.maxTaskConnections()"
+      [value]="connections()"
+      [disabled]="btOnly()"
+      (input)="onConnections($event)"
+    />
+    @if (btOnly()) {
+      <mat-hint>BT 任务的连接由会话自己管，这里不用填</mat-hint>
+    } @else {
+      <mat-hint>最多 {{ settings.maxTaskConnections() }} 条（单任务上限）</mat-hint>
+    }
+  </mat-form-field>
+
+  @if (hasPreview()) {
+    <div class="preview">
+      <div class="preview-title">
+        <app-icon name="file" />
+        <span class="preview-name" [title]="previewLabel()">{{ previewLabel() }}</span>
+      </div>
+      <app-file-picker
+        [files]="pickerFiles()"
+        (toggle)="toggleFile($event)"
+        (setAll)="setAll($event)"
+      />
+    </div>
+  }
+
+  @if (error(); as text) {
+    <div class="error">{{ text }}</div>
+  }
+</mat-dialog-content>
+
+<mat-dialog-actions>
+  <button matButton (click)="pickTorrent()" [disabled]="busy()">
+    <app-icon name="file" />
+    导入种子文件
+  </button>
+  @if (singleMagnet()) {
+    <button matButton (click)="previewNow()" [disabled]="!canPreview()">
+      <app-icon name="list" />
+      {{ previewing() ? '解析元数据中…' : '预览文件' }}
+    </button>
+  }
+  <span class="spacer"></span>
+  <button matButton (click)="cancel()">取消</button>
+  <button matButton="filled" (click)="submit()" [disabled]="busy()">
+    <app-icon name="download" />
+    {{ busy() ? '添加中…' : '开始下载' }}
+  </button>
+</mat-dialog-actions>

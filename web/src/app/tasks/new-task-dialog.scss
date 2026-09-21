@@ -1,0 +1,59 @@
+.dialog-body {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  min-width: min(440px, 76vw);
+}
+
+.dir-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.grow {
+  flex: 1;
+  min-width: 0;
+}
+
+.connections {
+  width: 150px;
+}
+
+/* 把「导入种子文件」推到左边，取消/开始下载留在右边 */
+.spacer {
+  flex: 1;
+}
+
+.preview {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 10px 12px;
+  border: 1px solid var(--mat-sys-outline-variant);
+  border-radius: var(--mat-sys-corner-medium);
+  background: var(--mat-sys-surface-container-low);
+}
+
+.preview-title {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  font: var(--mat-sys-title-small);
+}
+
+.preview-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.error {
+  padding: 8px 10px;
+  border-radius: var(--mat-sys-corner-small);
+  background: var(--mat-sys-error-container);
+  color: var(--mat-sys-on-error-container);
+  font: var(--mat-sys-body-small);
+  white-space: pre-wrap;
+}

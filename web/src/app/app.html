@@ -2,55 +2,18 @@
   <!-- macOS 隐藏标题栏后，这条带子负责拖动窗口，与系统标题栏同高 -->
   <div class="titlebar-drag" data-tauri-drag-region></div>
 
-  <aside class="sidebar">
-    <div class="sidebar-top"></div>
-
-    <div class="brand">
-      <span class="brand-name">川流</span>
-      <span class="brand-en">Conflux</span>
-    </div>
-
-    <nav class="filters">
-      @for (item of filters; track item.key) {
-        <button
-          type="button"
-          class="filter"
-          [class.filter-active]="item.key === filter()"
-          (click)="filter.set(item.key)"
-        >
-          <span>{{ item.label }}</span>
-          <span class="filter-count">0</span>
-        </button>
-      }
-    </nav>
-
-    <div class="spacer"></div>
-
-    <div class="sidebar-foot">
-      <div>Angular 骨架 · 第 1 期</div>
-      <div class="path">窗口材质：{{ material() }}</div>
-    </div>
-  </aside>
+  <app-sidebar />
 
   <main class="content">
     <div class="content-inner">
-      <header class="page-head">
-        <h1>川流 Conflux</h1>
-        <p>
-          前端已换成 Angular 22 ＋ Angular Material：构建链、材质探测、拖拽带与侧边栏布局都在位，
-          任务列表、新建下载与任务详情在第 2–4 期迁入。
-        </p>
-      </header>
-
-      <section class="panel">
-        <h2>组件自检</h2>
-        <div class="row">
-          <button matButton="filled">填充按钮</button>
-          <button matButton="tonal">次级按钮</button>
-          <button matButton>文字按钮</button>
+      @if (messageText(); as text) {
+        <div class="message" animate.enter="message-in" animate.leave="message-out">
+          {{ text }}
+          <button matButton (click)="dismiss()"><app-icon name="close" />关闭</button>
         </div>
-        <mat-progress-bar mode="determinate" value="42" />
-      </section>
+      }
+
+      <app-task-list [tasks]="store.visible()" [emptyText]="emptyText()" />
     </div>
   </main>
 </div>

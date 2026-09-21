@@ -1,0 +1,35 @@
+<div class="picker-head">
+  <span class="summary">{{ summary() }}</span>
+  @if (choosable() && files().length > 1) {
+    @if (allSelected()) {
+      <button matButton (click)="toggleAll(false)">全不选</button>
+    } @else {
+      <button matButton (click)="toggleAll(true)">全选</button>
+    }
+  }
+</div>
+
+<ul class="file-list">
+  @for (file of rows(); track file.index) {
+    <li class="file-row" [class.unselected]="!file.selected">
+      @if (choosable()) {
+        <mat-checkbox
+          [checked]="file.selected"
+          [disabled]="file.locked"
+          [attr.title]="file.locked ? '至少要留一个文件' : null"
+          (change)="toggle.emit(file.index)"
+          [attr.aria-label]="file.name"
+        />
+      }
+      <div class="file-main">
+        <span class="file-name" [title]="file.name">{{ file.name }}</span>
+        @if (file.progress) {
+          <div class="file-progress" [title]="file.done + ' / ' + file.size">
+            <span class="bar" [style.width.%]="file.ratio"></span>
+          </div>
+        }
+      </div>
+      <span class="file-size mono">{{ file.size }}</span>
+    </li>
+  }
+</ul>

@@ -1,0 +1,89 @@
+:host {
+  display: block;
+}
+
+.section-head {
+  display: flex;
+  align-items: center;
+  width: 100%;
+  height: 32px;
+  padding: 0 12px;
+  border: none;
+  border-radius: var(--mat-sys-corner-small);
+  background: transparent;
+  color: var(--mat-sys-on-surface-variant);
+  font: var(--mat-sys-label-medium);
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-align: left;
+  cursor: pointer;
+  transition: background-color 0.18s cubic-bezier(0.2, 0, 0, 1), color 0.18s cubic-bezier(0.2, 0, 0, 1);
+}
+
+.section-head app-icon {
+  --icon-size: 16px;
+  color: var(--mat-sys-on-surface-variant);
+}
+
+.section-title {
+  flex: 1;
+  margin-inline-start: 8px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.section-head:hover {
+  background: color-mix(in srgb, var(--mat-sys-on-surface) 6%, transparent);
+  color: var(--mat-sys-on-surface);
+}
+
+.chevron {
+  display: inline-block;
+  font-size: 16px;
+  line-height: 1;
+  transition: transform 0.22s cubic-bezier(0.2, 0, 0, 1);
+}
+
+.chevron-open {
+  transform: rotate(90deg);
+}
+
+.section-body {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  /* 标题自带 12px 内边距、图标再占 16px，二级项要越过这一整块才能看出层级：
+     28px 让二级图标落在 40px，比标题图标右移 16px */
+  padding: 2px 0 6px 28px;
+}
+
+.section-in {
+  animation: nav-section-in 0.22s cubic-bezier(0.2, 0, 0, 1);
+}
+
+.section-out {
+  animation: nav-section-out 0.16s cubic-bezier(0.4, 0, 1, 1) forwards;
+}
+
+@keyframes nav-section-in {
+  from {
+    opacity: 0;
+    transform: translateY(-4px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@keyframes nav-section-out {
+  from {
+    opacity: 1;
+    transform: none;
+  }
+  to {
+    opacity: 0;
+    transform: translateY(-4px);
+  }
+}
