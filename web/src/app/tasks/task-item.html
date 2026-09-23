@@ -4,7 +4,7 @@
   <div class="task-head">
     <div class="task-title">
       <span class="task-name" [title]="item.savePath">{{ item.fileName }}</span>
-      @if (isBt()) {
+      @if (hasKindChip()) {
         <span class="kind-chip">{{ kindLabel() }}</span>
       }
       <app-status-chip
@@ -96,6 +96,22 @@
             <span class="mono">{{ bt.peers }}</span>
             <span class="bt-label">已上传</span>
             <span class="mono">{{ bt.uploaded }}</span>
+          </div>
+        </div>
+      }
+
+      @if (ed2kDetails(); as ed2k) {
+        <div class="bt-details">
+          <div class="details-title">电驴信息</div>
+          <div class="bt-grid">
+            <span class="bt-label">文件哈希</span>
+            <span class="mono hash">{{ ed2k.hash }}</span>
+            <span class="bt-label">源</span>
+            <span class="mono">{{ ed2k.peers }}</span>
+            <span class="bt-label">网络</span>
+            <span class="mono">{{ ed2k.network }}</span>
+            <span class="bt-label">已上传</span>
+            <span class="mono">{{ ed2k.uploaded }}</span>
           </div>
         </div>
       }

@@ -712,6 +712,32 @@ async fn preview_lists_files_without_downloading() {
     );
 }
 
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn preview_times_out_after_tcp_connect_without_downloading() {
+    let root = TempDir::new("bt-preview-timeout");
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
+        .await
+        .expect("监听本地 peer 失败");
+    let dir = root.join("download");
+    let runtime = BtRuntime::local(dir.clone(), vec![listener.local_addr().unwrap()])
+        .await
+        .expect("启动会话失败");
+    let resolving = conflux_lib::download::bt::preview_magnet(
+        &runtime,
+        "magnet:?xt=urn:btih:0000000000000000000000000000000000000000",
+        Duration::from_secs(1),
+    );
+    tokio::pin!(resolving);
+    let (connection, _) = tokio::select! {
+        accepted = listener.accept() => accepted.expect("接受连接失败"),
+        result = &mut resolving => panic!("应该先建立 TCP 连接：{result:?}"),
+    };
+    let error = resolving.await.expect_err("peer 不回复握手应超时");
+    assert!(error.contains("没能从任何 peer 拿到元数据"), "{error}");
+    assert!(!dir.exists(), "元数据超时不该创建下载目录");
+    drop(connection);
+}
+
 /// 选择性下载的完成标志：勾一个文件，只有它被完整下载，其余的最多被边界分片蹭到一点。
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn selecting_files_downloads_only_those() {
@@ -893,4 +919,340 @@ async fn narrowing_selection_midflight_still_finishes() {
         alpha_view.downloaded,
         alpha_view.length
     );
+}
+
+/// 同一个种子同时只留一个任务：第二个任务会接到别人的会话句柄上，
+/// 保存目录与勾选都被忽略，还可能「秒完成」而自己的目录是空的。
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn adding_the_same_torrent_twice_is_rejected() {
+    let harness = setup_multi(None).await;
+    let peer = seeding_addr(&harness._seeding).await;
+    let torrent_path = harness.root.join("dup.torrent");
+    std::fs::write(
+        &torrent_path,
+        harness.torrent.as_bytes().expect("序列化种子失败"),
+    )
+    .expect("写入种子文件失败");
+
+    let store = Arc::new(Store::open_in_memory().expect("打开数据库失败"));
+    let (manager, dir) = start_client(&harness.root, Arc::clone(&store), peer, "dup").await;
+    let magnet = harness.torrent.as_magnet().to_string();
+
+    let first = add_bt_task(&manager, magnet.clone(), &dir, None);
+
+    // 换一个目录再下同一个种子：不给建，否则两个任务会共用同一个句柄
+    let second_dir = harness.root.join("downloads-dup-2");
+    std::fs::create_dir_all(&second_dir).unwrap();
+    let again = manager.add(
+        magnet.clone(),
+        Some(second_dir.to_string_lossy().to_string()),
+        None,
+        None,
+    );
+    let err = again.expect_err("同一个种子的第二个任务应被拒绝");
+    assert!(
+        err.contains("已经在任务"),
+        "报错应说清是哪个任务在用，实际：{err}"
+    );
+
+    // 换成种子文件那条路也一样：两种入口认的是同一个 info hash
+    let by_file = manager.add_torrent_file(
+        torrent_path.to_string_lossy().to_string(),
+        Some(second_dir.to_string_lossy().to_string()),
+        None,
+        None,
+    );
+    assert!(by_file.is_err(), "同一个种子换个入口进来同样应被拒绝");
+
+    // 队列里还是只有一个任务，且它没被搅乱
+    let views = manager.list();
+    assert_eq!(views.len(), 1, "被拒的任务不该留在列表里");
+    assert_eq!(views[0].id, first);
+
+    // 移除之后会话里那份句柄也要消失：否则再建任务时 librqbit 会把旧句柄交回来，
+    // 新任务的目录与勾选照样被忽略。会话的 delete 是异步的，等它一拍。
+    manager.remove(&first, false).expect("移除应成功");
+    tokio::time::sleep(Duration::from_millis(500)).await;
+
+    let second = manager
+        .add(
+            magnet,
+            Some(second_dir.to_string_lossy().to_string()),
+            None,
+            None,
+        )
+        .expect("移除之后同一个种子应能重新建任务");
+    wait_until(Duration::from_secs(60), "重新建的任务在第二个目录下完", || {
+        view_of(&manager, &second).map(|view| view.status) == Some(TaskStatus::Completed)
+    })
+    .await;
+
+    let output = harness.output_dir(&second_dir);
+    for (name, expected) in &harness.contents {
+        assert!(
+            std::fs::read(output.join(name)).expect("文件应已落盘") == *expected,
+            "{name} 应落在新任务的目录下且与源文件一致"
+        );
+    }
+}
+
+/// 已完成的任务里把文件勾回来：要真的去补下，而不是只改界面与数据库。
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn completed_task_downloads_files_selected_back() {
+    let harness = setup_multi(None).await;
+    let peer = seeding_addr(&harness._seeding).await;
+    let store = Arc::new(Store::open_in_memory().expect("打开数据库失败"));
+    let (manager, dir) = start_client(&harness.root, Arc::clone(&store), peer, "backfill").await;
+
+    let preview = manager
+        .preview_magnet(harness.torrent.as_magnet().to_string())
+        .await
+        .expect("预览应成功");
+    let index_of = |name: &str| {
+        preview
+            .files
+            .iter()
+            .find(|file| file.name == name)
+            .unwrap_or_else(|| panic!("预览里应有 {name}"))
+            .index
+    };
+    let (alpha, beta) = (index_of("alpha.bin"), index_of("beta.bin"));
+
+    // 只勾 beta，下完就结束
+    let id = add_bt_task(
+        &manager,
+        harness.torrent.as_magnet().to_string(),
+        &dir,
+        Some(vec![beta]),
+    );
+    wait_until(Duration::from_secs(60), "只勾 beta 的任务完成", || {
+        view_of(&manager, &id).map(|view| view.status) == Some(TaskStatus::Completed)
+    })
+    .await;
+
+    let output = harness.output_dir(&dir);
+    let alpha_bytes = std::fs::read(output.join("alpha.bin")).unwrap_or_default();
+    assert!(
+        alpha_bytes.iter().all(|byte| *byte == 0),
+        "还没勾 alpha.bin，它不该有内容"
+    );
+
+    // 勾回来：任务应当自己接着把这部分下完
+    manager
+        .set_files(&id, vec![alpha, beta])
+        .expect("改勾选应成功");
+    wait_until(Duration::from_secs(90), "把 alpha.bin 补下", || {
+        view_of(&manager, &id).is_some_and(|view| {
+            let alpha = view.files.iter().find(|file| file.name == "alpha.bin");
+            view.status == TaskStatus::Completed
+                && alpha.is_some_and(|file| file.downloaded == file.length)
+        })
+    })
+    .await;
+
+    let done = view_of(&manager, &id).expect("任务应还在");
+    // 总量按分片算，所以是「alpha + beta 覆盖到的分片」而不是两个文件的字节和
+    let expected_min =
+        harness.content("alpha.bin").len() as u64 + harness.content("beta.bin").len() as u64;
+    assert!(
+        done.total_bytes >= expected_min && done.total_bytes < harness.total_bytes(),
+        "总量应覆盖 alpha.bin 与 beta.bin，且不含没勾的 gamma.bin，实际 {}",
+        done.total_bytes
+    );
+    for name in ["alpha.bin", "beta.bin"] {
+        assert!(
+            std::fs::read(output.join(name)).expect("文件应已落盘") == harness.content(name),
+            "{name} 的内容应与源文件一致"
+        );
+    }
+}
+
+/// 记账用的迷你 SOCKS5 服务器：只支持「无认证 + CONNECT」，
+/// 把每个连接请求的目标地址记下来再转发。
+/// 用它证明「配了代理之后，BT 的 tracker 请求与 peer 连接真的是从代理走的」。
+async fn spawn_socks5_logger() -> (std::net::SocketAddr, Arc<Mutex<Vec<String>>>) {
+    let listener = tokio::net::TcpListener::bind(("127.0.0.1", 0))
+        .await
+        .expect("启动 SOCKS5 夹具失败");
+    let addr = listener.local_addr().unwrap();
+    let observed = Arc::new(Mutex::new(Vec::new()));
+    let log = Arc::clone(&observed);
+    tokio::spawn(async move {
+        loop {
+            let Ok((stream, _)) = listener.accept().await else {
+                break;
+            };
+            let log = Arc::clone(&log);
+            tokio::spawn(async move {
+                let _ = serve_socks5(stream, log).await;
+            });
+        }
+    });
+    (addr, observed)
+}
+
+async fn serve_socks5(
+    mut stream: tokio::net::TcpStream,
+    observed: Arc<Mutex<Vec<String>>>,
+) -> std::io::Result<()> {
+    use tokio::io::{AsyncReadExt, AsyncWriteExt};
+
+    let mut greeting = [0u8; 2];
+    stream.read_exact(&mut greeting).await?;
+    let mut methods = vec![0u8; greeting[1] as usize];
+    stream.read_exact(&mut methods).await?;
+    stream.write_all(&[0x05, 0x00]).await?; // 不要求认证
+
+    let mut head = [0u8; 4];
+    stream.read_exact(&mut head).await?;
+    if head[1] != 0x01 {
+        return Ok(()); // 夹具只会用到 CONNECT
+    }
+    let host = match head[3] {
+        0x01 => {
+            let mut raw = [0u8; 4];
+            stream.read_exact(&mut raw).await?;
+            std::net::Ipv4Addr::from(raw).to_string()
+        }
+        0x03 => {
+            let mut len = [0u8; 1];
+            stream.read_exact(&mut len).await?;
+            let mut raw = vec![0u8; len[0] as usize];
+            stream.read_exact(&mut raw).await?;
+            String::from_utf8_lossy(&raw).into_owned()
+        }
+        _ => return Ok(()),
+    };
+    let mut raw_port = [0u8; 2];
+    stream.read_exact(&mut raw_port).await?;
+    let target = format!("{host}:{}", u16::from_be_bytes(raw_port));
+    observed.lock().unwrap().push(target.clone());
+
+    let mut upstream = tokio::net::TcpStream::connect(&target).await?;
+    // 成功应答：BND.ADDR／BND.PORT 客户端不看，填零即可
+    stream
+        .write_all(&[0x05, 0x00, 0x00, 0x01, 0, 0, 0, 0, 0, 0])
+        .await?;
+    tokio::io::copy_bidirectional(&mut stream, &mut upstream).await?;
+    Ok(())
+}
+
+/// 迷你 HTTP tracker：对任何 announce 都回「做种端地址」（compact peers）。
+/// 地址要等做种会话绑好端口才知道，所以先留个槽位，事后再填。
+async fn spawn_tracker(peer: Arc<Mutex<Option<std::net::SocketAddr>>>) -> std::net::SocketAddr {
+    let listener = tokio::net::TcpListener::bind(("127.0.0.1", 0))
+        .await
+        .expect("启动 tracker 夹具失败");
+    let addr = listener.local_addr().unwrap();
+    tokio::spawn(async move {
+        loop {
+            let Ok((mut stream, _)) = listener.accept().await else {
+                break;
+            };
+            let peer = Arc::clone(&peer);
+            tokio::spawn(async move {
+                use tokio::io::{AsyncReadExt, AsyncWriteExt};
+                let mut buf = [0u8; 1024];
+                let _ = stream.read(&mut buf).await; // 请求内容不看
+                let Some(peer) = *peer.lock().unwrap() else {
+                    return;
+                };
+                let mut compact = match peer.ip() {
+                    std::net::IpAddr::V4(v4) => v4.octets().to_vec(),
+                    std::net::IpAddr::V6(v6) => v6.octets().to_vec(),
+                };
+                compact.extend_from_slice(&peer.port().to_be_bytes());
+                // bencode 的字符串要先给长度：peers 的值是 compact 形式的字节串
+                let mut body = format!("d8:intervali60e5:peers{}:", compact.len()).into_bytes();
+                body.extend_from_slice(&compact);
+                body.push(b'e');
+                let head = format!(
+                    "HTTP/1.1 200 OK\r\nContent-Length: {}\r\nContent-Type: text/plain\r\nConnection: close\r\n\r\n",
+                    body.len()
+                );
+                let _ = stream.write_all(head.as_bytes()).await;
+                let _ = stream.write_all(&body).await;
+            });
+        }
+    });
+    addr
+}
+
+/// 代理接线（第 8 期的验收）：设置里配好 SOCKS5 之后，BT 找 peer 全走代理——
+/// tracker 的 HTTP 请求与 peer 的 TCP 连接都得从代理出去。
+/// 夹具：源文件 → 做种端 → 本地 tracker 把做种端地址告诉下载端；
+/// 下载端与它们之间竖一个记账版 SOCKS5，最后核对两笔连接都记在账上、内容逐字节一致。
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn bt_through_socks_proxy_reaches_tracker_and_peers() {
+    let root = TempDir::new("bt-proxy");
+    let source_dir = root.join("source");
+    std::fs::create_dir_all(&source_dir).expect("创建源目录失败");
+    let payload: Vec<u8> = (0..PAYLOAD_LEN).map(|i| (i * 31 % 251) as u8).collect();
+    let source_file = source_dir.join("payload.bin");
+    std::fs::write(&source_file, &payload).expect("写入源文件失败");
+
+    let peer_slot = Arc::new(Mutex::new(None));
+    let tracker_addr = spawn_tracker(Arc::clone(&peer_slot)).await;
+    let torrent = create_torrent(
+        &source_file,
+        CreateTorrentOptions {
+            name: Some("payload.bin"),
+            trackers: vec![format!("http://{tracker_addr}/announce")],
+            piece_length: Some(64 * 1024),
+        },
+        &BlockingSpawner::new(1),
+    )
+    .await
+    .expect("生成种子失败");
+    let seeding = seed_torrent(&root, &torrent, source_dir, None).await;
+    let seed_addr = seeding_addr(&seeding).await;
+    *peer_slot.lock().unwrap() = Some(seed_addr);
+
+    let download_dir = root.join("downloads");
+    std::fs::create_dir_all(&download_dir).expect("创建下载目录失败");
+    let store = Arc::new(Store::open_in_memory().expect("打开数据库失败"));
+    let (sink, _) = collecting_sink();
+    let manager = DownloadManager::new(sink, download_dir.clone(), Some(Arc::clone(&store)));
+    let (proxy_addr, observed) = spawn_socks5_logger().await;
+
+    assert!(!manager.bt_session_started(), "还没跑过 BT 任务，不该有会话");
+    assert!(
+        manager.set_bt_proxy("http://127.0.0.1:7897").is_err(),
+        "非 socks5 的地址应被拒绝"
+    );
+    let proxy_url = format!("socks5://{proxy_addr}");
+    assert_eq!(
+        manager
+            .set_bt_proxy(&proxy_url)
+            .expect("应接受合法的代理地址")
+            .as_deref(),
+        Some(proxy_url.as_str())
+    );
+
+    let id = manager
+        .add(
+            torrent.as_magnet().to_string(),
+            Some(download_dir.to_string_lossy().to_string()),
+            None,
+            None,
+        )
+        .expect("添加磁力任务失败");
+    wait_until(Duration::from_secs(90), "经代理下载完成", || {
+        view_of(&manager, &id).map(|view| view.status) == Some(TaskStatus::Completed)
+    })
+    .await;
+
+    let seen = observed.lock().unwrap().clone();
+    assert!(
+        seen.contains(&tracker_addr.to_string()),
+        "tracker 请求没走代理，代理只见过：{seen:?}"
+    );
+    assert!(
+        seen.contains(&seed_addr.to_string()),
+        "peer 连接没走代理，代理只见过：{seen:?}"
+    );
+    assert!(manager.bt_session_started(), "跑过 BT 任务后会话应已建好");
+
+    let downloaded = std::fs::read(download_dir.join("payload.bin")).expect("下载的文件不在");
+    assert!(downloaded == payload, "经代理下载的内容与源文件不一致");
 }

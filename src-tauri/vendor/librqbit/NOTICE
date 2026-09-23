@@ -1,0 +1,14 @@
+librqbit 9.0.1
+Copyright 2021 Igor Katson
+Upstream: https://github.com/ikatson/rqbit
+Source commit: a499d2f243d124e144aef137afe7cb304a6e3f36
+Source directory: crates/librqbit
+License: Apache-2.0; see LICENSE and LICENSE-APACHE.
+
+Conflux modifications (2026-09-23):
+- src/read_buf.rs: accumulate fragmented BT handshakes under one timeout,
+  preserve buffered following messages, and add handshake regression tests.
+- Cargo.toml: omit the readme field because Markdown documentation is not vendored.
+
+Cargo.lock, .cargo-ok, and Markdown documentation are omitted from the
+published crate copy. Other source files and dependency versions are unchanged.

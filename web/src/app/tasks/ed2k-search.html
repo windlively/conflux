@@ -1,0 +1,50 @@
+<div class="search-row">
+  <mat-form-field appearance="outline" subscriptSizing="dynamic" class="grow">
+    <mat-label>搜 ed2k 资源</mat-label>
+    <input
+      matInput
+      placeholder="片名、专辑或文件名关键词"
+      [value]="query()"
+      (input)="onQuery($event)"
+      (keydown.enter)="run()"
+    />
+  </mat-form-field>
+  <button matButton (click)="run()" [disabled]="searching() || busy()">
+    <app-icon name="search" />
+    {{ searching() ? '搜索中…' : '搜索' }}
+  </button>
+</div>
+
+<div class="notice">
+  搜索走公开的 eD2k 网络，结果由网络上的其他用户提供，可能混有盗版或违法内容。
+  明显违规的条目会在这里被滤掉，但滤不干净，请自行判断合法性。
+</div>
+
+@if (searching()) {
+  <div class="hint">正在问 eD2k 服务器与 Kad 网络，通常几秒到二十几秒…</div>
+}
+
+@if (error(); as text) {
+  <div class="error">{{ text }}</div>
+}
+
+@if (results().length > 0) {
+  <ul class="result-list">
+    @for (item of results(); track item.hash) {
+      <li class="result-row">
+        <div class="result-main">
+          <span class="result-name" [title]="item.name">{{ item.name }}</span>
+          <span class="result-meta">
+            {{ formatBytes(item.size) }} · {{ item.sources }} 个源
+            @if (item.completeSources > 0) {
+              · {{ item.completeSources }} 个完整源
+            }
+          </span>
+        </div>
+        <button matButton (click)="pick.emit(item)" [disabled]="busy()">
+          <app-icon name="download" />下载
+        </button>
+      </li>
+    }
+  </ul>
+}

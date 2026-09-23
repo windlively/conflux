@@ -9,6 +9,7 @@ use uuid::Uuid;
 use crate::store::Store;
 
 use super::bt::{self, BtRuntime};
+use super::ed2k::{self, Ed2kConfig, Ed2kRuntime, Ed2kSearchResult};
 use super::engine::{self, Outcome, ProgressFlush, ProgressSink};
 use super::limit::ConnectionGate;
 use super::probe;
@@ -24,6 +25,8 @@ pub const MAX_CONNECTIONS_LIMIT: usize = MAX_CONCURRENT_TASKS * MAX_TASK_CONNECT
 const DEFAULT_CONNECTIONS: usize = 4;
 /// 预览磁力时的等待上限：磁力本身不含文件清单，得先从 peer 拿到元数据
 const PREVIEW_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(15);
+/// 搜 ed2k 的等待上限：要等服务器与 Kad 两边都回一轮
+const ED2K_SEARCH_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(25);
 
 pub enum ManagerEvent {
     Update(TaskView),
@@ -43,6 +46,12 @@ pub struct DownloadManager {
     gate: Arc<ConnectionGate>,
     /// BT 会话按需创建：不用磁力就不开 DHT、不占监听端口
     bt: tokio::sync::OnceCell<Arc<BtRuntime>>,
+    /// BT 的 SOCKS5 代理；会话建好之后改不了，改动要等下次建会话（重启应用）
+    bt_proxy: Mutex<Option<String>>,
+    /// ed2k 侧车同样按需拉起：没有 ed2k 任务时不必起这个进程
+    ed2k: tokio::sync::OnceCell<Arc<Ed2kRuntime>>,
+    /// ed2k 侧车的状态文件放这儿（应用数据目录），不设时用下载目录
+    data_dir: Mutex<Option<PathBuf>>,
     /// 为 None 时不做任何持久化，下载功能照常
     store: Option<Arc<Store>>,
 }
@@ -62,6 +71,9 @@ impl DownloadManager {
             default_dir: default_dir.clone(),
             gate: ConnectionGate::new(DEFAULT_MAX_CONNECTIONS),
             bt: tokio::sync::OnceCell::new(),
+            bt_proxy: Mutex::new(None),
+            ed2k: tokio::sync::OnceCell::new(),
+            data_dir: Mutex::new(None),
             store,
         });
 
@@ -106,8 +118,51 @@ impl DownloadManager {
     }
 
     async fn bt_runtime(&self) -> Result<Arc<BtRuntime>, String> {
+        let proxy = self.bt_proxy.lock().unwrap().clone();
         self.bt
-            .get_or_try_init(|| BtRuntime::new(self.default_dir.clone()))
+            .get_or_try_init(|| BtRuntime::new_with_proxy(self.default_dir.clone(), proxy))
+            .await
+            .cloned()
+    }
+
+    /// 设置 BT 的 SOCKS5 代理；传空串表示不用代理。
+    /// 代理是会话级设置，会话已经建好时这次改动不会立刻生效（界面据此提示重启）。
+    pub fn set_bt_proxy(&self, raw: &str) -> Result<Option<String>, String> {
+        let value = bt::normalize_proxy(raw)?;
+        *self.bt_proxy.lock().unwrap() = value.clone();
+        Ok(value)
+    }
+
+    /// BT 会话是否已经建好：是的话，改代理要重启应用才生效
+    pub fn bt_session_started(&self) -> bool {
+        self.bt.get().is_some()
+    }
+
+    /// ed2k 侧车的状态文件（断点数据与 Kad 路由表）放在这里
+    pub fn set_data_dir(&self, dir: PathBuf) {
+        *self.data_dir.lock().unwrap() = Some(dir);
+    }
+
+    /// ed2k 侧车：第一次用到才拉起进程
+    pub async fn ed2k_runtime(&self) -> Result<Arc<Ed2kRuntime>, String> {
+        self.ed2k
+            .get_or_try_init(|| async {
+                let data_dir = self
+                    .data_dir
+                    .lock()
+                    .unwrap()
+                    .clone()
+                    .unwrap_or_else(|| self.default_dir.clone());
+                Ed2kRuntime::new(Ed2kConfig {
+                    state_path: ed2k::state_path(&data_dir),
+                    // 用 eMule 的标准端口，别人（与自己的下次启动）都能回连
+                    tcp_port: 4661,
+                    udp_port: 4662,
+                    kad: true,
+                    upnp: false,
+                })
+                .await
+            })
             .await
             .cloned()
     }
@@ -175,14 +230,26 @@ impl DownloadManager {
         let dir = self.resolve_dir(dir)?;
         let connections = connections.unwrap_or(DEFAULT_CONNECTIONS);
         let id = Uuid::new_v4().to_string();
-        let task = if url.starts_with("magnet:") {
+        let task = if url.starts_with("ed2k://") {
+            // ed2k 链接自带文件名、大小与哈希，入队时就能把任务卡填满
+            let info = ed2k::parse_link(&url)?;
+            Task::new_ed2k(
+                id.clone(),
+                url,
+                dir,
+                connections,
+                ed2k::safe_file_name(&info.name),
+                info.size,
+                info.hash,
+            )
+        } else if url.starts_with("magnet:") {
             let info = bt::parse_magnet(&url)?;
             Task::new_bt(id.clone(), url, dir, connections, info.info_hash, info.name)
         } else if url.starts_with("http://") || url.starts_with("https://") {
             Task::new(id.clone(), url, dir, connections)
         } else {
             return Err(
-                "当前版本支持 http(s) 链接、磁力链接（magnet:）与 .torrent 种子文件，其它协议还在路上"
+                "当前版本支持 http(s) 链接、磁力链接（magnet:）、.torrent 种子文件与 ed2k 链接，其它协议还在路上"
                     .to_string(),
             );
         };
@@ -222,8 +289,24 @@ impl DownloadManager {
         bt::parse_torrent_file(std::path::Path::new(path.trim()))
     }
 
-    /// 改任务勾选的文件：正在跑的任务由会话在下一拍应用，暂停中的等继续时生效。
-    pub fn set_files(&self, id: &str, indices: Vec<usize>) -> Result<(), String> {
+    /// 在 eD2k 服务器与 Kad 上搜关键词，返回结果给界面挑。
+    /// 侧车会按哈希去重并带上源数，界面据它决定下哪个。
+    pub async fn search_ed2k(&self, query: String) -> Result<Vec<Ed2kSearchResult>, String> {
+        let query = query.trim().to_string();
+        if query.is_empty() {
+            return Err("请先输入搜索关键词".to_string());
+        }
+        if ed2k::search_query_rejected(&query) {
+            return Err("这类内容不在搜索范围内".to_string());
+        }
+        let runtime = self.ed2k_runtime().await?;
+        let state = runtime.search(&query, ED2K_SEARCH_TIMEOUT).await?;
+        Ok(ed2k::search_results(&state))
+    }
+
+    /// 改任务勾选的文件：正在跑的任务由会话在下一拍应用，暂停中的等继续时生效，
+    /// 已完成的（勾回了没下过的文件时）会自动重新挂上接着下。
+    pub fn set_files(self: &Arc<Self>, id: &str, indices: Vec<usize>) -> Result<(), String> {
         let task = self.find(id).ok_or_else(|| "任务不存在".to_string())?;
         if indices.is_empty() {
             // 一个都不下等于让任务立刻「完成」，没有意义，界面也不该发出来
@@ -242,9 +325,27 @@ impl DownloadManager {
         let mut indices = indices;
         indices.sort_unstable();
         indices.dedup();
+        // 比的是归一化之后的结果：把 [0, 1] 换成「全选」不算改动
+        let before = task.only_files();
         task.set_only_files(indices);
+        let after = task.only_files();
+        // 只有新勾上了文件才值得重挂；取消勾选时文件早就下好了
+        let added = match (&before, &after) {
+            (_, None) => before.is_some(),
+            (None, Some(_)) => false,
+            (Some(old), Some(new)) => new.iter().any(|index| !old.contains(index)),
+        };
         self.emit(&task);
         self.persist(&task);
+        // 已完成的任务里把文件勾回来：自动接着下。少了这一步，界面与库里的勾选变了，
+        // 文件却永远不补（完成后会话仍把句柄留着，重新挂上就能续）。
+        let restart = added && {
+            let inner = task.inner.lock().unwrap();
+            matches!(inner.status, TaskStatus::Completed) && !inner.running
+        };
+        if restart {
+            self.start(id)?;
+        }
         Ok(())
     }
 
@@ -259,6 +360,7 @@ impl DownloadManager {
 
     fn enqueue(self: &Arc<Self>, task: Arc<Task>, only_files: Option<Vec<usize>>) -> Result<String, String> {
         let id = task.id.clone();
+        self.reject_duplicate_torrent(&task)?;
         // 勾选要在挂载之前写进任务，否则会先下起没勾的文件
         if let Some(indices) = only_files {
             if indices.is_empty() {
@@ -273,6 +375,64 @@ impl DownloadManager {
         Ok(id)
     }
 
+    /// 同一个种子同时只留一个任务：会话按 info_hash 管句柄，第二个任务接上去会用
+    /// 别人的保存目录与勾选，还可能「秒完成」而自己的目录是空的（见方案文档 §16.4）。
+    fn reject_duplicate_torrent(&self, task: &Task) -> Result<(), String> {
+        // BT 与 ed2k 都是按内容哈希认文件，同一个哈希只留一个任务
+        if !matches!(task.kind, TaskKind::Bt | TaskKind::Ed2k) {
+            return Ok(());
+        }
+        let Some(hash) = torrent_hash_of(task) else {
+            // 链接不对到那种程度，等真正挂载时的解析报错去说
+            return Ok(());
+        };
+        // 先克隆一份任务表再逐个看：不长时间占着列表锁，也不与 inner 锁套在一起
+        let others: Vec<Arc<Task>> = self.tasks.lock().unwrap().clone();
+        let hit = others.into_iter().find(|other| {
+            other.id != task.id
+                && matches!(other.kind, TaskKind::Bt | TaskKind::Ed2k)
+                && torrent_hash_of(other).as_deref() == Some(hash.as_str())
+        });
+        match hit {
+            Some(other) => Err(format!(
+                "这个文件已经在任务「{}」里了：先移除那个任务，或者继续用它",
+                other.file_name()
+            )),
+            None => Ok(()),
+        }
+    }
+
+    /// 任务被删掉后，会话里那份句柄也该跟着消失：否则下次为同一个种子建任务时，
+    /// librqbit 会把旧句柄原样交回来，新任务的目录与勾选都会被忽略。
+    fn drop_bt_handle(&self, task: &Task) {
+        if task.kind != TaskKind::Bt {
+            return;
+        }
+        let (Some(runtime), Some(hash)) = (self.bt.get().cloned(), task.info_hash()) else {
+            return;
+        };
+        tokio::spawn(async move { bt::drop_torrent(&runtime, &hash).await });
+    }
+
+    /// 任务被删掉后，侧车里那条记录也要清掉：否则侧车下次启动会把它恢复回来。
+    /// 文件由 `delete_task_files` 处理，所以这里不让侧车删。
+    fn drop_ed2k_transfer(&self, task: &Task) {
+        if task.kind != TaskKind::Ed2k {
+            return;
+        }
+        let (Some(runtime), Some(hash)) = (self.ed2k.get().cloned(), task.info_hash()) else {
+            return;
+        };
+        tokio::spawn(async move {
+            let _ = runtime
+                .call(
+                    "remove",
+                    Some(serde_json::json!({ "hash": hash, "deleteFile": false })),
+                )
+                .await;
+        });
+    }
+
     fn start(self: &Arc<Self>, id: &str) -> Result<(), String> {
         let task = self.find(id).ok_or_else(|| "任务不存在".to_string())?;
         {
@@ -280,11 +440,9 @@ impl DownloadManager {
             if inner.running {
                 return Ok(());
             }
-            // 取消只是「停在这儿」，临时文件与分片进度还在，允许继续
-            if matches!(inner.status, TaskStatus::Completed) {
-                return Err("任务已结束".to_string());
-            }
         }
+        // 「已完成」不挡在这里：BT 的完成只是停下做种，勾选改回去要能接着下
+        // （`set_files`），取消也只是「停在这儿」，两者的临时文件与进度都在。
 
         if self.active.load(Ordering::SeqCst) >= MAX_CONCURRENT_TASKS {
             task.inner.lock().unwrap().status = TaskStatus::Queued;
@@ -345,6 +503,16 @@ impl DownloadManager {
                     Outcome::Failed(err)
                 }
             }
+        } else if task.kind == TaskKind::Ed2k {
+            match self.ed2k_runtime().await {
+                Ok(runtime) => ed2k::run(task.clone(), runtime, engine_sink, cancel, flush).await,
+                Err(err) => {
+                    task.set_error(err.clone());
+                    task.inner.lock().unwrap().status = TaskStatus::Failed;
+                    (self.sink)(ManagerEvent::Update(task.snapshot()));
+                    Outcome::Failed(err)
+                }
+            }
         } else {
             engine::run(
                 task.clone(),
@@ -373,6 +541,7 @@ impl DownloadManager {
             self.remove_from_waiting(&task.id);
             self.tasks.lock().unwrap().retain(|item| item.id != task.id);
             self.forget(&task.id);
+            // 句柄由 bt::run 的取消分支顺手摘掉了（它拿到的是 Id，不会再找一遍）
             delete_task_files(&task, delete_file);
             (self.sink)(ManagerEvent::Removed(task.id.clone()));
         } else {
@@ -516,6 +685,8 @@ impl DownloadManager {
         self.remove_from_waiting(id);
         self.tasks.lock().unwrap().retain(|item| item.id != id);
         self.forget(id);
+        self.drop_bt_handle(&task);
+        self.drop_ed2k_transfer(&task);
         delete_task_files(&task, delete_file);
         (self.sink)(ManagerEvent::Removed(id.to_string()));
         Ok(())
@@ -525,6 +696,23 @@ impl DownloadManager {
 /// 看起来是本地种子文件路径（而不是链接）时，按 .torrent 处理。
 fn looks_like_torrent_path(input: &str) -> bool {
     !input.contains("://") && input.to_ascii_lowercase().ends_with(".torrent")
+}
+
+/// 任务的磁力原文（种子文件任务是 None）。
+fn magnet_of(task: &Task) -> Option<String> {
+    let inner = task.inner.lock().unwrap();
+    inner.bt.as_ref()?.magnet.clone()
+}
+
+/// 任务对应哪个种子：种子文件的 info hash 入队就有，磁力的直接写在链接里。
+/// 拿不到（链接本身就是坏的）时返回 None。
+fn torrent_hash_of(task: &Task) -> Option<String> {
+    if let Some(hash) = task.info_hash() {
+        return Some(hash);
+    }
+    bt::parse_magnet(&magnet_of(task)?)
+        .ok()
+        .map(|info| info.info_hash)
 }
 
 /// 删除任务留下的文件。BT 的 save_path 可能是多文件种子的目录，
@@ -539,7 +727,8 @@ fn delete_task_files(task: &Task, delete_file: bool) {
         return;
     }
     match task.kind {
-        TaskKind::Http => {
+        // ed2k 与 http 一样是单文件，直接落在任务目录下
+        TaskKind::Http | TaskKind::Ed2k => {
             let _ = std::fs::remove_file(&save_path);
         }
         TaskKind::Bt => {

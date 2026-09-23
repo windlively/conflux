@@ -3,7 +3,7 @@ use std::sync::Arc;
 use serde::Serialize;
 use tauri::{AppHandle, Manager, State};
 
-use crate::download::{DownloadManager, TaskView, TorrentPreview};
+use crate::download::{DownloadManager, Ed2kSearchResult, TaskView, TorrentPreview};
 use crate::store::Store;
 
 pub struct AppState {
@@ -103,6 +103,16 @@ pub async fn set_task_files(
     state.manager.set_files(&id, files)
 }
 
+/// 搜 ed2k：走 Kad 与 eD2k 服务器，等两边回完一轮才返回。
+#[tauri::command]
+pub async fn search_ed2k(
+    state: State<'_, AppState>,
+    query: String,
+) -> Result<Vec<Ed2kSearchResult>, String> {
+    let manager = state.manager.clone();
+    manager.search_ed2k(query).await
+}
+
 #[tauri::command]
 pub async fn pause_task(state: State<'_, AppState>, id: String) -> Result<(), String> {
     state.manager.pause(&id)
@@ -152,4 +162,24 @@ pub async fn window_material(state: State<'_, AppState>) -> Result<String, Strin
 pub async fn set_max_connections(state: State<'_, AppState>, limit: usize) -> Result<usize, String> {
     state.manager.set_max_connections(limit);
     Ok(state.manager.max_connections())
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct BtProxySetting {
+    /// 归一化后的代理地址；None 表示不用代理
+    pub value: Option<String>,
+    /// 保存时 BT 会话是否已经建好：是则这次改动要重启应用才生效
+    pub session_running: bool,
+}
+
+/// 设置 BT 的 SOCKS5 代理（peer 连接与 tracker 请求走它）；空串表示关闭代理。
+/// 传空串之外的非 socks5 地址会被拒绝，界面据此提示格式。
+#[tauri::command]
+pub async fn set_bt_proxy(state: State<'_, AppState>, url: String) -> Result<BtProxySetting, String> {
+    let value = state.manager.set_bt_proxy(&url)?;
+    Ok(BtProxySetting {
+        value,
+        session_running: state.manager.bt_session_started(),
+    })
 }

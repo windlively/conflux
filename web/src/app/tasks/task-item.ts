@@ -40,7 +40,8 @@ export class TaskItem {
 
   protected readonly expanded = signal(false);
 
-  protected readonly isBt = computed(() => this.task().kind === 'bt');
+  /** http 任务不挂协议标签，只有磁力／种子与 ed2k 才需要区分 */
+  protected readonly hasKindChip = computed(() => this.task().kind !== 'http');
 
   protected readonly kindLabel = computed(() => TASK_KIND_LABEL[this.task().kind]);
 
@@ -48,6 +49,8 @@ export class TaskItem {
     const task = this.task();
     // BT 的「解析资源」是把磁力换成种子元数据，说清楚在解析什么
     if (task.kind === 'bt' && task.status === 'probing') return '解析元数据';
+    // ed2k 的解析阶段是拉起侧车、连服务器与建 Kad 路由表，接着才开始找源
+    if (task.kind === 'ed2k' && task.status === 'probing') return '接入网络中';
     return TASK_STATUS_LABEL[task.status];
   });
 
@@ -98,8 +101,32 @@ export class TaskItem {
         ? '尚未连上 peer'
         : `已连 ${stats.peersConnected} 个 peer`;
     }
+    if (task.kind === 'ed2k') {
+      // 先找到源再谈连上：刚挂上时源表是空的，一分钟后可能一大把
+      const stats = task.ed2kStats;
+      if (stats === null) return '尚未找到源';
+      if (stats.activePeers > 0) return `已连 ${stats.activePeers} 个源`;
+      return stats.peers > 0 ? `已找到 ${stats.peers} 个源` : '尚未找到源';
+    }
     return task.supportsRange ? `${task.connections} 连接` : '单连接（服务器不支持分段）';
   }
+
+  /** ed2k 详情：也是没有分片通道，换成文件哈希、源、服务器与 Kad 节点 */
+  protected readonly ed2kDetails = computed(() => {
+    const task = this.task();
+    if (task.kind !== 'ed2k') return null;
+    const stats = task.ed2kStats;
+    return {
+      hash: task.infoHash ?? '--',
+      peers:
+        stats === null ? '--' : `已知 ${stats.peers} · 已连 ${stats.activePeers}`,
+      network:
+        stats === null
+          ? '--'
+          : `${stats.servers} 个服务器 · ${stats.kadNodes} 个 Kad 节点`,
+      uploaded: stats === null ? '--' : formatBytes(stats.uploadedBytes),
+    };
+  });
 
   /** BT 详情：没有分片通道，换成种子标识、peer 与上传量 */
   protected readonly btDetails = computed(() => {
@@ -116,7 +143,9 @@ export class TaskItem {
     };
   });
 
-  protected readonly hasDetails = computed(() => this.btDetails() !== null);
+  protected readonly hasDetails = computed(
+    () => this.btDetails() !== null || this.ed2kDetails() !== null,
+  );
 
   /** 种子的文件清单：元数据到手后就能在详情里改要下哪几个 */
   protected readonly fileList = computed(() => this.task().files);

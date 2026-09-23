@@ -1,7 +1,13 @@
 import { invoke } from '@tauri-apps/api/core';
 import { listen, type UnlistenFn } from '@tauri-apps/api/event';
 
-import type { StorageInfo, TaskView, TorrentPreview } from './types';
+import type {
+  BtProxySetting,
+  Ed2kSearchResult,
+  StorageInfo,
+  TaskView,
+  TorrentPreview,
+} from './types';
 
 /** `files` 是预览后勾选的文件序号，null 表示全都下 */
 export const addTask = (
@@ -24,6 +30,9 @@ export const previewMagnet = (magnet: string) => invoke<TorrentPreview>('preview
 /** 预览本地种子文件：纯本地解析，不用联网 */
 export const previewTorrentFile = (path: string) =>
   invoke<TorrentPreview>('preview_torrent_file', { path });
+
+/** 搜 ed2k：由侧车同时问 eD2k 服务器与 Kad，等两边回完一轮才返回 */
+export const searchEd2k = (query: string) => invoke<Ed2kSearchResult[]>('search_ed2k', { query });
 
 /** 改任务勾选的文件；传全部序号等于「全选」 */
 export const setTaskFiles = (id: string, files: number[]) =>
@@ -51,6 +60,9 @@ export const windowMaterial = () => invoke<string>('window_material');
 /** 设置所有任务合计的连接数上限（后端的全局闸门），返回夹取后真正生效的值 */
 export const setMaxConnections = (limit: number) =>
   invoke<number>('set_max_connections', { limit });
+
+/** 设置 BT 的 SOCKS5 代理（peer 连接与 tracker 请求走它）；空串表示关闭代理 */
+export const setBtProxy = (url: string) => invoke<BtProxySetting>('set_bt_proxy', { url });
 
 /**
  * 设置窗口外观：原生材质（玻璃／磨砂）与 WebView 的 prefers-color-scheme 都跟着它走，

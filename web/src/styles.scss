@@ -201,6 +201,13 @@ html[data-theme='dark'][data-material='blur'] .sidebar {
   background: rgba(33, 31, 38, 0.62);
 }
 
+/* 拖侧边栏宽度时：指针可能划出把手，光标与选区都得按住 */
+body.resizing,
+body.resizing * {
+  cursor: col-resize !important;
+  user-select: none;
+}
+
 /* 隐藏标题栏后，这块区域负责拖动窗口：与系统标题栏同高、覆盖整窗宽度 */
 .titlebar-drag {
   display: none;

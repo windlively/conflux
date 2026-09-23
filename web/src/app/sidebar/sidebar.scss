@@ -3,8 +3,9 @@
 }
 
 .sidebar {
-  width: 240px;
-  flex: 0 0 240px;
+  /* 宽度由 UiState.sidebarWidth 通过行内样式写进来，默认 240 与旧版一致 */
+  width: var(--sidebar-w, 240px);
+  flex: 0 0 var(--sidebar-w, 240px);
   padding: 16px 12px 14px;
   display: flex;
   flex-direction: column;
@@ -20,9 +21,36 @@
 }
 
 .sidebar-collapsed {
-  margin-left: -240px;
+  margin-left: calc(var(--sidebar-w, 240px) * -1);
   opacity: 0;
   pointer-events: none;
+}
+
+/* 右缘的拖动把手：骑在分界线上，伸出去 4px 好抓。
+   顶部 30px 留给窗口拖拽带（z-index 10），所以这里只到 z-index 5 */
+.resizer {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  right: -4px;
+  width: 9px;
+  z-index: 5;
+  cursor: col-resize;
+  touch-action: none;
+}
+
+.resizer::after {
+  content: '';
+  position: absolute;
+  inset: 0 4px;
+  border-radius: 1px;
+  background: transparent;
+  transition: background-color 0.15s cubic-bezier(0.2, 0, 0, 1);
+}
+
+.resizer:hover::after {
+  background: var(--mat-sys-primary);
+  opacity: 0.45;
 }
 
 /* 侧边栏收起后，收起按钮「变」成悬在内容区左上角的展开按钮，新建任务跟着滑到它下面：
@@ -231,6 +259,11 @@ html[data-platform='windows'] .sidebar-fabs {
   flex-direction: column;
   gap: 12px;
   overflow-y: auto;
+  /* 只纵向滚动：只写 overflow-y 时 overflow-x 会被算成 auto，
+     内容宽出 1px 就冒出一条横向滚动条 */
+  overflow-x: hidden;
+  /* 纵向滚动条出现/消失不再改变内容的可用宽度，宽度变化只由用户拖拽决定 */
+  scrollbar-gutter: stable;
 }
 
 /* 侧边栏是纵向 flex，子项默认允许收缩——内容一多就会把按钮和品牌行挤扁 */
@@ -307,6 +340,16 @@ html[data-platform='windows'] .sidebar-fabs {
   --icon-size: 14px;
 }
 
+/* 拖到比默认宽度还窄时，内外边距各收一格：窄栏里的内容宽度仍与默认宽度相当，
+   设置行的标签不会被挤成两三行，三段控件也还放得下「图标＋文字」 */
+.sidebar-narrow {
+  padding-inline: 8px;
+}
+
+.sidebar-narrow ::ng-deep .section-body {
+  padding-left: 16px;
+}
+
 /* 组件自带的 16px 段内边距在三段控件里放不下，收到 5px；
    侧边栏只有 240px，这里必须精确控制 */
 .appearance ::ng-deep .mat-button-toggle-label-content {
@@ -340,6 +383,40 @@ html[data-platform='windows'] .sidebar-fabs {
 
 .setting .info:hover {
   opacity: 1;
+}
+
+/* app-icon 读的是 --icon-size，不是按钮的 --mat-icon-button-icon-size：
+   不补这一行图标会按默认 18px 画，撑出按钮还给行尾顶出 1px 溢出 */
+.setting .info app-icon {
+  --icon-size: 14px;
+}
+
+/* BT 代理是个文本框：做得像设置行里的值，别比旁边的控件抢眼 */
+.proxy-input {
+  width: 100%;
+  height: 28px;
+  padding: 0 8px;
+  border: 1px solid var(--mat-sys-outline-variant);
+  border-radius: var(--mat-sys-corner-small);
+  background: var(--mat-sys-surface-container-high);
+  color: var(--mat-sys-on-surface);
+  font: var(--mat-sys-body-small);
+}
+
+.proxy-input::placeholder {
+  color: var(--mat-sys-on-surface-variant);
+  opacity: 0.7;
+}
+
+.proxy-input:focus {
+  outline: none;
+  border-color: var(--mat-sys-primary);
+}
+
+/* 后端拒绝这个地址时的原因，留在输入框下面 */
+.proxy-error {
+  font: var(--mat-sys-body-small);
+  color: var(--mat-sys-error);
 }
 
 .stepper {

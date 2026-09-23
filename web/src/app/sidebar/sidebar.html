@@ -1,4 +1,14 @@
-<aside class="sidebar" [class.sidebar-collapsed]="!ui.sidebarOpen()">
+<aside
+  class="sidebar"
+  [class.sidebar-collapsed]="!ui.sidebarOpen()"
+  [class.sidebar-narrow]="ui.sidebarNarrow()"
+  [style.--sidebar-w]="ui.sidebarWidth() + 'px'"
+>
+  <div
+    class="resizer"
+    title="拖动调整侧边栏宽度"
+    (pointerdown)="startResize($event)"
+  ></div>
   <div class="sidebar-top"></div>
 
   <div class="brand">
@@ -131,6 +141,36 @@
               </button>
             </span>
           </div>
+        </div>
+
+        <div class="setting">
+          <div class="setting-row">
+            <span class="setting-label">BT 代理</span>
+            <button
+              matIconButton
+              class="info"
+              type="button"
+              aria-label="BT 代理说明"
+              matTooltip="SOCKS5 代理，只作用于 BT：peer 连接与 tracker 请求走代理。DHT 是 UDP、不走代理，因此用代理时会关掉它；HTTP 下载照常直连。留空表示不用代理；BT 会话已在运行时改动要重启应用才生效。"
+              matTooltipPosition="right"
+              #proxyInfo="matTooltip"
+              (click)="proxyInfo.show()"
+            >
+              <app-icon name="info" />
+            </button>
+          </div>
+          <input
+            class="proxy-input"
+            type="text"
+            aria-label="BT 代理地址"
+            placeholder="socks5://127.0.0.1:7897"
+            [value]="proxyDraft()"
+            (input)="onProxyInput($event)"
+            (change)="saveProxy()"
+          />
+          @if (settings.btProxyError(); as message) {
+            <div class="proxy-error">{{ message }}</div>
+          }
         </div>
 
         <div class="setting">

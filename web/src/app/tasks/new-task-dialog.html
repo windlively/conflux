@@ -7,7 +7,7 @@
       matInput
       rows="3"
       aria-label="下载链接"
-      placeholder="粘贴下载链接：http/https 地址或 magnet 磁力链接，也可粘贴 .torrent 文件路径；支持一次多行批量添加"
+      placeholder="粘贴下载链接：http/https 地址、magnet 磁力链接或 ed2k 链接，也可粘贴 .torrent 文件路径；支持一次多行批量添加"
       [value]="urls()"
       (input)="onUrls($event)"
     ></textarea>
@@ -15,6 +15,10 @@
       <mat-hint>可以先预览一下这个磁力里有哪些文件，再决定下哪几个</mat-hint>
     }
   </mat-form-field>
+
+  @if (showSearch()) {
+    <app-ed2k-search [busy]="busy()" (pick)="downloadFound($event)" />
+  }
 
   <div class="dir-row">
     <mat-form-field appearance="outline" subscriptSizing="dynamic" class="grow">
@@ -67,6 +71,10 @@
 </mat-dialog-content>
 
 <mat-dialog-actions>
+  <button matButton (click)="showSearch.set(!showSearch())" [disabled]="busy()">
+    <app-icon name="search" />
+    {{ showSearch() ? '收起 ed2k 搜索' : '搜 ed2k 资源' }}
+  </button>
   <button matButton (click)="pickTorrent()" [disabled]="busy()">
     <app-icon name="file" />
     导入种子文件

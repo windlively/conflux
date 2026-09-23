@@ -1,4 +1,4 @@
-import { ChangeDetectionStrategy, Component, computed, inject } from '@angular/core';
+import { ChangeDetectionStrategy, Component, computed, inject, signal } from '@angular/core';
 import { MatButtonModule } from '@angular/material/button';
 import { MatButtonToggleModule } from '@angular/material/button-toggle';
 import { MatDialog } from '@angular/material/dialog';
@@ -42,6 +42,9 @@ export class Sidebar {
 
   protected readonly totalSpeedLabel = computed(() => formatSpeed(this.store.totalSpeed()));
 
+  /** 代理输入框的草稿：保存失败时保留用户输入，不把值回滚成旧的 */
+  protected readonly proxyDraft = signal(this.settings.btProxy());
+
   protected openNewTask() {
     this.dialog.open(NewTaskDialog, {
       width: '560px',
@@ -69,5 +72,42 @@ export class Sidebar {
 
   protected stepMaxTotalConnections(delta: number) {
     this.settings.setMaxTotalConnections(this.settings.maxTotalConnections() + delta);
+  }
+
+  /** 右缘那条拖动把手：抓住指针后按位移改宽度，范围夹取在 UiState 里 */
+  protected startResize(event: PointerEvent) {
+    event.preventDefault();
+    const handle = event.currentTarget as HTMLElement;
+    handle.setPointerCapture(event.pointerId);
+    const offset = event.clientX - this.ui.sidebarWidth();
+    document.body.classList.add('resizing');
+
+    const onMove = (move: PointerEvent) => this.ui.setSidebarWidth(move.clientX - offset);
+    const onEnd = (end: PointerEvent) => {
+      handle.releasePointerCapture(end.pointerId);
+      handle.removeEventListener('pointermove', onMove);
+      handle.removeEventListener('pointerup', onEnd);
+      handle.removeEventListener('pointercancel', onEnd);
+      document.body.classList.remove('resizing');
+    };
+
+    handle.addEventListener('pointermove', onMove);
+    handle.addEventListener('pointerup', onEnd);
+    handle.addEventListener('pointercancel', onEnd);
+  }
+
+  protected onProxyInput(event: Event) {
+    this.proxyDraft.set((event.target as HTMLInputElement).value);
+  }
+
+  /** 失焦或回车时提交（文本框的 change 事件） */
+  protected async saveProxy() {
+    const result = await this.settings.saveBtProxy(this.proxyDraft());
+    if (!result.saved) return; // 原因已经显示在输入框下面
+    // 存的是归一化后的地址（例如 socks5h:// 会被改写），把它回填到输入框
+    this.proxyDraft.set(this.settings.btProxy());
+    if (result.needsRestart) {
+      this.ui.notify('BT 代理已保存；BT 会话已在运行，重启应用后生效');
+    }
   }
 }

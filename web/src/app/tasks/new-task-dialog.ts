@@ -15,7 +15,8 @@ import {
 } from '../core/api';
 import { Icon } from '../core/icon';
 import { Settings } from '../core/settings';
-import type { TorrentFile, TorrentPreview } from '../core/types';
+import type { Ed2kSearchResult, TorrentFile, TorrentPreview } from '../core/types';
+import { Ed2kSearch } from './ed2k-search';
 import { FilePicker } from './file-picker';
 
 /** 预览里挑文件时，任务是怎么来的：磁力要么按原文再挂一次，要么是本地种子文件 */
@@ -31,6 +32,7 @@ type PreviewSource =
 @Component({
   selector: 'app-new-task-dialog',
   imports: [
+    Ed2kSearch,
     FilePicker,
     Icon,
     MatButtonModule,
@@ -52,6 +54,8 @@ export class NewTaskDialog {
   protected readonly busy = signal(false);
   protected readonly previewing = signal(false);
   protected readonly error = signal<string | null>(null);
+  /** ed2k 搜索面板默认收着，用不到的人不用看它 */
+  protected readonly showSearch = signal(false);
 
   private readonly preview = signal<TorrentPreview | null>(null);
   private readonly source = signal<PreviewSource | null>(null);
@@ -188,6 +192,11 @@ export class NewTaskDialog {
     } catch (failure) {
       this.error.set(String(failure));
     }
+  }
+
+  /** 从搜索结果里挑一条直接建任务：目录与连接数用弹窗里当前填的 */
+  protected async downloadFound(result: Ed2kSearchResult) {
+    await this.run(() => addTask(result.link, this.dir() || null, this.connections()));
   }
 
   protected toggleFile(index: number) {

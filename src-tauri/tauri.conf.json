@@ -10,13 +10,15 @@
     "frontendDist": "../dist"
   },
   "app": {
+    "macOSPrivateApi": true,
     "windows": [
       {
         "title": "川流 Conflux",
         "width": 1020,
         "height": 760,
         "minWidth": 720,
-        "minHeight": 520
+        "minHeight": 520,
+        "devtools": false
       }
     ],
     "security": {
@@ -26,6 +28,7 @@
   "bundle": {
     "active": true,
     "targets": "all",
+    "externalBin": ["binaries/ed2k-sidecar"],
     "icon": [
       "icons/32x32.png",
       "icons/128x128.png",

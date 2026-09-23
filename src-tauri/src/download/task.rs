@@ -204,6 +204,11 @@ pub struct BtInfo {
     pub torrent_path: Option<String>,
 }
 
+/// ed2k 任务独有的信息。链接里就带着哈希，入队即知。
+pub struct Ed2kInfo {
+    pub hash: String,
+}
+
 pub struct TaskInner {
     pub dir: PathBuf,
     pub file_name: String,
@@ -214,11 +219,14 @@ pub struct TaskInner {
     pub supports_range: bool,
     pub probed: bool,
     pub counters: Option<std::sync::Arc<Counters>>,
-    /// 没有分片通道的协议（BT）直接由会话汇报已下载字节
+    /// 没有分片通道的协议（BT／ed2k）直接由会话汇报已下载字节
     pub downloaded: u64,
     pub bt: Option<BtInfo>,
+    pub ed2k: Option<Ed2kInfo>,
     /// BT 的 peer 数与上传量，由会话的统计快照刷新
     pub bt_stats: Option<BtStats>,
+    /// ed2k 的 peer、服务器与 Kad 节点数，同样来自侧车的状态事件
+    pub ed2k_stats: Option<Ed2kStats>,
     /// 种子里的文件清单。磁力要在元数据到手后才有，种子文件入队即知
     pub bt_files: Vec<TorrentFile>,
     /// 用户勾选的文件序号；None 表示全选
@@ -274,7 +282,9 @@ impl Task {
                 counters: None,
                 downloaded: 0,
                 bt: None,
+                ed2k: None,
                 bt_stats: None,
+                ed2k_stats: None,
                 bt_files: Vec::new(),
                 only_files: None,
                 channels: Vec::new(),
@@ -331,7 +341,9 @@ impl Task {
                     magnet: Some(magnet),
                     torrent_path: None,
                 }),
+                ed2k: None,
                 bt_stats: None,
+                ed2k_stats: None,
                 bt_files: Vec::new(),
                 only_files: None,
                 channels: Vec::new(),
@@ -385,9 +397,68 @@ impl Task {
                     magnet: None,
                     torrent_path: Some(path),
                 }),
+                ed2k: None,
                 bt_stats: None,
+                ed2k_stats: None,
                 // 种子文件自带清单，入队就能让用户挑文件
                 bt_files: info.files,
+                only_files: None,
+                channels: Vec::new(),
+                cancel: None,
+                stop: None,
+                running: false,
+                resume_pending: false,
+                removed: false,
+                speed_bps: 0,
+                last_total_bytes: 0,
+                last_tick: None,
+                created_at: now_millis(),
+            }),
+        }
+    }
+
+    /// ed2k 任务：链接里带着文件名、大小与哈希，入队即知全部信息，
+    /// 剩下要做的只是让侧车去网络上找源。
+    pub fn new_ed2k(
+        id: String,
+        link: String,
+        dir: PathBuf,
+        connections: usize,
+        file_name: String,
+        total: u64,
+        hash: String,
+    ) -> Self {
+        let connections = connections.clamp(1, MAX_TASK_CONNECTIONS);
+        let file_name = {
+            let sanitized = sanitize_file_name(&file_name);
+            if sanitized.is_empty() {
+                "ed2k 任务".to_string()
+            } else {
+                sanitized
+            }
+        };
+        let save_path = dir.join(&file_name);
+        Task {
+            id,
+            url: link,
+            kind: TaskKind::Ed2k,
+            connections,
+            inner: Mutex::new(TaskInner {
+                dir,
+                file_name,
+                save_path,
+                status: TaskStatus::Queued,
+                error: None,
+                total,
+                supports_range: false,
+                probed: true,
+                counters: None,
+                downloaded: 0,
+                bt: None,
+                ed2k: Some(Ed2kInfo { hash }),
+                bt_stats: None,
+                ed2k_stats: None,
+                bt_files: Vec::new(),
                 only_files: None,
                 channels: Vec::new(),
                 cancel: None,
@@ -424,6 +495,53 @@ impl Task {
 
     pub fn only_files(&self) -> Option<Vec<usize>> {
         self.inner.lock().unwrap().only_files.clone()
+    }
+
+    /// 这个任务在协议里的身份：BT 是 info hash，ed2k 是文件哈希（都是 32/40 位十六进制）。
+    /// 磁力任务在拿不到元数据之前是 None。
+    pub fn info_hash(&self) -> Option<String> {
+        let inner = self.inner.lock().unwrap();
+        let hash = match (&inner.bt, &inner.ed2k) {
+            (Some(bt), _) => &bt.info_hash,
+            (_, Some(ed2k)) => &ed2k.hash,
+            _ => return None,
+        };
+        (!hash.is_empty()).then(|| hash.clone())
+    }
+
+    /// ed2k 的 peer、服务器与 Kad 节点数，来自侧车的状态事件
+    pub fn set_ed2k_stats(&self, stats: Ed2kStats) {
+        self.inner.lock().unwrap().ed2k_stats = Some(stats);
+    }
+
+    /// ed2k 任务的链接（url 字段就是它），不是 ed2k 任务时返回 None
+    pub fn ed2k_link(&self) -> Option<String> {
+        let inner = self.inner.lock().unwrap();
+        inner.ed2k.as_ref()?;
+        Some(self.url.clone())
+    }
+
+    /// 侧车回报的文件名与总大小才是权威（链接里的大小可能与实际不符）
+    pub fn apply_ed2k_meta(&self, name: &str, total: u64, hash: &str) {
+        let mut inner = self.inner.lock().unwrap();
+        let file_name = sanitize_file_name(name);
+        if !file_name.is_empty() && inner.counters.is_none() {
+            inner.save_path = inner.dir.join(&file_name);
+            inner.file_name = file_name;
+        }
+        if total > 0 {
+            inner.total = total;
+        }
+        if let Some(ed2k) = inner.ed2k.as_mut() {
+            if !hash.is_empty() {
+                ed2k.hash = hash.to_string();
+            }
+        }
+    }
+
+    /// ed2k 的速率由侧车汇报，不像 http 那样自己按字节差算
+    pub fn set_speed(&self, speed_bps: u64) {
+        self.inner.lock().unwrap().speed_bps = speed_bps;
     }
 
     /// 元数据到手后写入文件清单，用户已有的勾选要保留。
@@ -618,7 +736,7 @@ impl Task {
                 });
             }
         } else {
-            // 没有分片通道的协议（BT）：进度由会话直接汇报
+            // 没有分片通道的协议（BT／ed2k）：进度由会话或侧车直接汇报
             downloaded = inner.downloaded;
             for id in 0..inner.channels.len() {
                 let channel = &inner.channels[id];
@@ -660,8 +778,13 @@ impl Task {
             channels,
             segments,
             files: inner.bt_files.clone(),
-            info_hash: inner.bt.as_ref().map(|bt| bt.info_hash.clone()),
+            info_hash: inner
+                .bt
+                .as_ref()
+                .map(|bt| bt.info_hash.clone())
+                .or_else(|| inner.ed2k.as_ref().map(|ed2k| ed2k.hash.clone())),
             bt_stats: inner.bt_stats,
+            ed2k_stats: inner.ed2k_stats,
             error: inner.error.clone(),
         }
     }

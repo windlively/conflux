@@ -18,6 +18,13 @@ export class App {
   protected readonly store = inject(TasksStore);
   protected readonly ui = inject(UiState);
 
+  constructor() {
+    // 右键菜单里的「检查元素 / Reload」是 WebKit 自带的：后端把 webview 设成不可检查后，
+    // 输入框上的编辑菜单仍会带出它，所以页面这一层直接压掉整个右键菜单。
+    // 代价是输入框没有右键粘贴了（⌘C／⌘V 照旧）。
+    document.addEventListener('contextmenu', (event) => event.preventDefault());
+  }
+
   protected readonly emptyText = computed(() =>
     this.store.tasks().length === 0 ? '还没有下载任务，点侧边栏的「新建任务」开始' : '该分类下暂无任务',
   );

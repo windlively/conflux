@@ -5,7 +5,7 @@ use std::sync::{Arc, Mutex};
 use crate::store::{SegmentRecord, Store, TaskRecord};
 
 use super::task::{
-    mark_selected, now_millis, plan_segment_count, BtInfo, ChannelRuntime, Counters, Task,
+    mark_selected, now_millis, plan_segment_count, BtInfo, ChannelRuntime, Counters, Ed2kInfo, Task,
     TaskInner, MAX_TASK_CONNECTIONS,
 };
 use super::types::{TaskKind, TaskStatus};
@@ -45,7 +45,11 @@ fn task_record(task: &Task) -> TaskRecord {
             .unwrap_or(false),
         connections: task.connections as i64,
         error: inner.error.clone(),
-        info_hash: inner.bt.as_ref().map(|bt| bt.info_hash.clone()),
+        info_hash: inner
+            .bt
+            .as_ref()
+            .map(|bt| bt.info_hash.clone())
+            .or_else(|| inner.ed2k.as_ref().map(|ed2k| ed2k.hash.clone())),
         magnet: inner.bt.as_ref().and_then(|bt| bt.magnet.clone()),
         torrent_path: inner.bt.as_ref().and_then(|bt| bt.torrent_path.clone()),
         only_files: inner
@@ -60,9 +64,9 @@ fn task_record(task: &Task) -> TaskRecord {
 fn segment_records(task: &Task) -> Vec<SegmentRecord> {
     let inner = task.inner.lock().unwrap();
     let Some(counters) = &inner.counters else {
-        // BT 没有分片表，用一行覆盖整个文件的伪分片承载已下载字节，
-        // 重启后界面立刻能显示断点进度，不必等种子重新核对磁盘
-        return if task.kind == TaskKind::Bt && inner.total > 0 {
+        // BT 与 ed2k 都没有分片表，用一行覆盖整个文件的伪分片承载已下载字节，
+        // 重启后界面立刻能显示断点进度，不必等会话／侧车重新核对磁盘
+        return if task.kind != TaskKind::Http && inner.total > 0 {
             vec![SegmentRecord {
                 idx: 0,
                 start: 0,
@@ -137,8 +141,8 @@ fn restore_one(
         Vec::new()
     };
 
-    // BT 的那行伪分片只用来显示断点进度；真正下到哪了由会话重新核对磁盘后汇报
-    let downloaded = if kind == TaskKind::Bt {
+    // 那行伪分片只用来显示断点进度；真正下到哪了由会话／侧车重新核对磁盘后汇报
+    let downloaded = if kind != TaskKind::Http {
         segments
             .first()
             .filter(|segment| segment.start == 0 && segment.len == record.total_bytes)
@@ -167,7 +171,7 @@ fn restore_one(
     };
     let channel_count = match &counters {
         Some(counters) => counters.channel_bytes.len(),
-        None if kind == TaskKind::Bt => 0,
+        None if kind != TaskKind::Http => 0,
         None if record.single_stream => 1,
         None => plan_segment_count(record.total_bytes.max(0) as u64, connections).max(1),
     };
@@ -195,16 +199,20 @@ fn restore_one(
             total: record.total_bytes.max(0) as u64,
             supports_range: record.supports_range,
             // http 任务重新探测一次，用来确认远端文件没有被替换
-            probed: kind == TaskKind::Bt,
+            probed: kind != TaskKind::Http,
             counters,
             downloaded,
             bt_stats: None,
+            ed2k_stats: None,
             bt_files,
             only_files,
             bt: (kind == TaskKind::Bt).then(|| BtInfo {
                 info_hash: record.info_hash.clone().unwrap_or_default(),
                 magnet: record.magnet.clone(),
                 torrent_path: record.torrent_path.clone(),
+            }),
+            ed2k: (kind == TaskKind::Ed2k).then(|| Ed2kInfo {
+                hash: record.info_hash.clone().unwrap_or_default(),
             }),
             channels: (0..channel_count).map(|_| ChannelRuntime::new()).collect(),
             cancel: None,

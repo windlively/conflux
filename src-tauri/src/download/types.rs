@@ -1,11 +1,13 @@
 use serde::Serialize;
 
-/// 任务走的下载协议。http 走自研多连接引擎，bt 交给进程内的 librqbit 会话。
+/// 任务走的下载协议。http 走自研多连接引擎，bt 交给进程内的 librqbit 会话，
+/// ed2k 交给 goed2k 侧车（Rust 侧没有可用的 ed2k 实现）。
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub enum TaskKind {
     Http,
     Bt,
+    Ed2k,
 }
 
 impl TaskKind {
@@ -13,6 +15,7 @@ impl TaskKind {
         match self {
             TaskKind::Http => "http",
             TaskKind::Bt => "bt",
+            TaskKind::Ed2k => "ed2k",
         }
     }
 
@@ -20,6 +23,7 @@ impl TaskKind {
         match value {
             "http" => Some(TaskKind::Http),
             "bt" => Some(TaskKind::Bt),
+            "ed2k" => Some(TaskKind::Ed2k),
             _ => None,
         }
     }
@@ -157,6 +161,21 @@ pub struct TorrentPreview {
     pub files: Vec<TorrentFile>,
 }
 
+/// ed2k 任务的实时状态：这个协议没有分片通道，能看的是源与服务器／Kad。
+#[derive(Debug, Clone, Copy, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Ed2kStats {
+    /// 已知有这个文件的源（含还没连上的）
+    pub peers: u32,
+    /// 正在传数据的源
+    pub active_peers: u32,
+    /// 已连上的 eD2k 服务器数
+    pub servers: u32,
+    /// Kad 路由表里活着的节点数
+    pub kad_nodes: u32,
+    pub uploaded_bytes: u64,
+}
+
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct TaskView {
@@ -181,5 +200,7 @@ pub struct TaskView {
     pub info_hash: Option<String>,
     /// 只有 BT 任务有
     pub bt_stats: Option<BtStats>,
+    /// 只有 ed2k 任务有
+    pub ed2k_stats: Option<Ed2kStats>,
     pub error: Option<String>,
 }

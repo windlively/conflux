@@ -12,9 +12,9 @@ use std::time::{Duration, Instant};
 use librqbit::api::TorrentIdOrHash;
 use librqbit::dht::Id20;
 use librqbit::{
-    torrent_from_bytes, AddTorrent, AddTorrentOptions, AddTorrentResponse, DhtSessionConfig,
-    ListenerMode, ListenerOptions, ListOnlyResponse, ManagedTorrent, Magnet, Session,
-    SessionOptions, TorrentStatsState, ValidatedTorrentMetaV1Info,
+    torrent_from_bytes, AddTorrent, AddTorrentOptions, AddTorrentResponse, ConnectionOptions,
+    DhtSessionConfig, ListenerMode, ListenerOptions, ListOnlyResponse, ManagedTorrent, Magnet,
+    Session, SessionOptions, TorrentStatsState, ValidatedTorrentMetaV1Info,
 };
 use tokio_util::sync::CancellationToken;
 
@@ -43,6 +43,31 @@ pub fn parse_magnet(url: &str) -> Result<MagnetInfo, String> {
         info_hash: info_hash.as_string(),
         name: magnet.name,
     })
+}
+
+/// 校验并归一化 BT 的 SOCKS5 代理地址；返回 None 表示不用代理。
+/// librqbit 只认 `socks5://`（可带 `用户名:密码@`），这里顺手接受等价的 `socks5h://`。
+pub fn normalize_proxy(raw: &str) -> Result<Option<String>, String> {
+    let trimmed = raw.trim();
+    if trimmed.is_empty() {
+        return Ok(None);
+    }
+    let rest = trimmed
+        .strip_prefix("socks5://")
+        .or_else(|| trimmed.strip_prefix("socks5h://"))
+        .ok_or_else(|| {
+            format!("代理地址要以 socks5:// 开头，例如 socks5://127.0.0.1:7897（当前填的是 {trimmed}）")
+        })?;
+    // 有凭据时只看 @ 后面那截，IPv6 字面量的冒号在方括号里，rsplit 取最后一个冒号仍是对的
+    let host_port = rest.rsplit_once('@').map_or(rest, |(_, host_port)| host_port);
+    let (host, port) = host_port
+        .rsplit_once(':')
+        .ok_or_else(|| "代理地址要带端口，例如 socks5://127.0.0.1:7897".to_string())?;
+    let valid_port = port.parse::<u16>().map(|port| port > 0).unwrap_or(false);
+    if host.is_empty() || !valid_port {
+        return Err("代理地址的主机或端口不合法，例如 socks5://127.0.0.1:7897".to_string());
+    }
+    Ok(Some(format!("socks5://{rest}")))
 }
 
 /// 种子文件自带元数据：与磁力不同，入队时就知道名字、总大小与文件清单，不必等 peer。
@@ -187,9 +212,28 @@ async fn prepare(task: &Task, runtime: &BtRuntime, target: Target) -> Result<Mou
 
 /// 会话里是否已经挂着这个种子：暂停后继续时靠它直接挂回去，不必再解析一次元数据。
 fn managed_by_info_hash(runtime: &BtRuntime, task: &Task) -> Option<Arc<ManagedTorrent>> {
-    let info_hash = task.inner.lock().unwrap().bt.as_ref()?.info_hash.clone();
+    session_handle(runtime, &task.info_hash()?)
+}
+
+fn session_handle(runtime: &BtRuntime, info_hash: &str) -> Option<Arc<ManagedTorrent>> {
     let id: Id20 = info_hash.parse().ok()?;
     runtime.session().get(TorrentIdOrHash::Hash(id))
+}
+
+/// 把一个种子从会话里彻底移除（任务被删掉时用）。留着它有麻烦：
+/// 下次为同一个种子建任务时 librqbit 会把旧句柄原样交回来，
+/// 新任务的保存目录与勾选都会被忽略（见方案文档 §16.4）。
+pub async fn drop_torrent(runtime: &BtRuntime, info_hash: &str) {
+    let Ok(id) = info_hash.parse::<Id20>() else {
+        return;
+    };
+    if let Err(err) = runtime
+        .session()
+        .delete(TorrentIdOrHash::Hash(id), false)
+        .await
+    {
+        eprintln!("从会话移除种子失败：{err}");
+    }
 }
 
 /// 把种子挂到会话上，返回它的句柄。
@@ -241,7 +285,16 @@ pub struct BtRuntime {
 impl BtRuntime {
     /// 生产会话：开 DHT 与 tracker，在全部网卡上监听随机端口。
     pub async fn new(default_dir: PathBuf) -> Result<Arc<Self>, String> {
-        Self::build(default_dir, Vec::new(), false).await
+        Self::build(default_dir, Vec::new(), false, None).await
+    }
+
+    /// 生产会话 + SOCKS5 代理：peer 的 TCP 连接与 tracker 的 HTTP 请求都走代理。
+    /// 代理是会话级设置，建好之后改不了——要改请等下次建会话（应用重启）。
+    pub async fn new_with_proxy(
+        default_dir: PathBuf,
+        proxy: Option<String>,
+    ) -> Result<Arc<Self>, String> {
+        Self::build(default_dir, Vec::new(), false, proxy).await
     }
 
     /// 测试夹具：关掉 DHT、tracker 与局域网发现，只在回环地址监听，
@@ -250,22 +303,29 @@ impl BtRuntime {
         default_dir: PathBuf,
         extra_peers: Vec<SocketAddr>,
     ) -> Result<Arc<Self>, String> {
-        Self::build(default_dir, extra_peers, true).await
+        Self::build(default_dir, extra_peers, true, None).await
     }
 
     async fn build(
         default_dir: PathBuf,
         extra_peers: Vec<SocketAddr>,
         local: bool,
+        proxy: Option<String>,
     ) -> Result<Arc<Self>, String> {
         let options = SessionOptions {
-            // 每次启动重新引导 DHT 即可，不往磁盘写路由表
-            dht: (!local).then(|| DhtSessionConfig {
+            // 每次启动重新引导 DHT 即可，不往磁盘写路由表。
+            // DHT 是 UDP、librqbit 不走 SOCKS，所以用代理时把它关掉：
+            // 既连不上，又会把 info hash 广播到直连网络里去。
+            dht: (!local && proxy.is_none()).then(|| DhtSessionConfig {
                 persistence: None,
                 ..Default::default()
             }),
             disable_trackers: local,
             disable_local_service_discovery: local,
+            connect: proxy.map(|url| ConnectionOptions {
+                proxy_url: Some(url),
+                ..Default::default()
+            }),
             listen: Some(ListenerOptions {
                 mode: ListenerMode::TcpOnly,
                 listen_addr: if local {
@@ -357,6 +417,17 @@ pub async fn run(
             match prepared {
                 Err(message) => return fail(&task, &sink, message),
                 Ok(mount) => {
+                    // 解析完才知道种子是谁。这一步还能查到句柄，说明它不是本任务的续传
+                    // （那条路在上面就挂回去了），而是别的任务留下的同一个种子——
+                    // 接上去会用别人的目录与勾选，得挡在这儿。
+                    if session_handle(&runtime, &mount.preview.info_hash).is_some() {
+                        return fail(
+                            &task,
+                            &sink,
+                            "这个种子已经在另一个任务里了：先移除那个任务，或继续用它"
+                                .to_string(),
+                        );
+                    }
                     // 清单先落给任务：会话还在核对已有分片时，界面就能列出文件、也能改勾选
                     task.set_torrent_files(mount.preview.files.clone());
                     let name = mount
@@ -391,7 +462,7 @@ pub async fn run(
     // 会话当前算哪些文件：暂停期间用户可能改过勾选，以它为准决定要不要同步过去
     let mut applied_only_files = handle.only_files();
     loop {
-        let stats = handle.stats();
+        let mut stats = handle.stats();
 
         if stats.total_bytes > 0 && !metadata_seen {
             metadata_seen = true;
@@ -420,6 +491,9 @@ pub async fn run(
                 eprintln!("更新勾选失败：{err}");
             }
             applied_only_files = wanted;
+            // 上面那份快照是改勾选之前取的：重新读一次，别拿旧的 finished 把任务收走。
+            // 「已完成的任务里把文件勾回来」正是靠这里才真的会去补下。
+            stats = handle.stats();
         }
         if metadata_seen {
             task.set_progress(stats.progress_bytes, stats.total_bytes);
@@ -500,6 +574,46 @@ pub async fn run(
                 return Outcome::Cancelled;
             }
             _ = tokio::time::sleep(TICK) => {}
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::normalize_proxy;
+
+    #[test]
+    fn proxy_normalization_accepts_socks5_and_rejects_the_rest() {
+        assert_eq!(normalize_proxy("").unwrap(), None);
+        assert_eq!(normalize_proxy("   ").unwrap(), None);
+        assert_eq!(
+            normalize_proxy(" socks5://127.0.0.1:7897 ").unwrap().as_deref(),
+            Some("socks5://127.0.0.1:7897")
+        );
+        // socks5h（远程解析域名）是常见写法，等价收下
+        assert_eq!(
+            normalize_proxy("socks5h://127.0.0.1:7897").unwrap().as_deref(),
+            Some("socks5://127.0.0.1:7897")
+        );
+        assert_eq!(
+            normalize_proxy("socks5://user:pass@10.0.0.1:1080").unwrap().as_deref(),
+            Some("socks5://user:pass@10.0.0.1:1080")
+        );
+        assert_eq!(
+            normalize_proxy("socks5://[::1]:1080").unwrap().as_deref(),
+            Some("socks5://[::1]:1080")
+        );
+
+        for invalid in [
+            "127.0.0.1:7897",
+            "http://127.0.0.1:7897",
+            "socks5://127.0.0.1",
+            "socks5://127.0.0.1:0",
+            "socks5://127.0.0.1:port",
+            "socks5://:7897",
+            "socks5://",
+        ] {
+            assert!(normalize_proxy(invalid).is_err(), "{invalid} 应被拒绝");
         }
     }
 }

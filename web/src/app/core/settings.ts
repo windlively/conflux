@@ -1,6 +1,6 @@
 import { Injectable, computed, effect, signal } from '@angular/core';
 
-import { setMaxConnections, setWindowTheme } from './api';
+import { setBtProxy, setMaxConnections, setWindowTheme } from './api';
 
 export interface AccentOption {
   key: string;
@@ -30,6 +30,7 @@ const KEY_DIR = 'conflux.dir';
 const KEY_CONNECTIONS = 'conflux.connections';
 const KEY_MAX_TASK_CONNECTIONS = 'conflux.maxTaskConnections';
 const KEY_MAX_TOTAL_CONNECTIONS = 'conflux.maxTotalConnections';
+const KEY_BT_PROXY = 'conflux.btProxy';
 const KEY_ACCENT = 'conflux.accent';
 const KEY_THEME = 'conflux.theme';
 
@@ -62,6 +63,10 @@ export class Settings {
   readonly accent = signal(localStorage.getItem(KEY_ACCENT) ?? ACCENTS[0].key);
   readonly themeMode = signal<ThemeMode>(readStoredTheme());
   readonly systemDark = signal(darkQuery.matches);
+  /** BT 的 SOCKS5 代理；空串表示不用代理 */
+  readonly btProxy = signal(localStorage.getItem(KEY_BT_PROXY) ?? '');
+  /** 后端拒绝这次代理设置时的原因，显示在输入框下面 */
+  readonly btProxyError = signal<string | null>(null);
 
   /** 新任务的连接数：默认值，但不越过单任务上限 */
   readonly taskConnections = computed(() =>
@@ -90,6 +95,10 @@ export class Settings {
     effect(() => {
       void setMaxConnections(this.maxTotalConnections()).catch(() => undefined);
     });
+    effect(() => localStorage.setItem(KEY_BT_PROXY, this.btProxy()));
+    // BT 代理存在后端内存里、建会话时生效；开局把本机保存的值推一次（空值推了也无妨）。
+    // 这一步失败不提示：只有用户主动保存时，才需要把原因显示在设置里。
+    void this.saveBtProxy(this.btProxy(), { report: false });
     effect(() => {
       const accent = this.accent();
       document.documentElement.dataset['accent'] = accent;
@@ -131,6 +140,26 @@ export class Settings {
 
   setThemeMode(mode: ThemeMode) {
     this.themeMode.set(mode);
+  }
+
+  /**
+   * 保存 BT 代理：后端按 librqbit 的规则校验（只认 socks5://），
+   * 通过后把归一化结果写回本机设置。返回是否保存成功、以及是否要重启才生效。
+   * `report: false` 表示失败也不打扰用户（启动时把已存的值推给后端用）。
+   */
+  async saveBtProxy(
+    raw: string,
+    options: { report?: boolean } = {},
+  ): Promise<{ saved: boolean; needsRestart: boolean }> {
+    try {
+      const state = await setBtProxy(raw);
+      this.btProxy.set(state.value ?? '');
+      this.btProxyError.set(null);
+      return { saved: true, needsRestart: state.sessionRunning };
+    } catch (error) {
+      if (options.report !== false) this.btProxyError.set(String(error));
+      return { saved: false, needsRestart: false };
+    }
   }
 }
 

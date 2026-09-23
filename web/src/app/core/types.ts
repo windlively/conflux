@@ -18,13 +18,36 @@ export type ChannelState =
 
 export type SegmentState = 'pending' | 'downloading' | 'completed';
 
-export type TaskKind = 'http' | 'bt';
+export type TaskKind = 'http' | 'bt' | 'ed2k';
 
 /** BT 任务没有分片通道，界面上用 peer 数与上传量代替通道表 */
 export interface BtStats {
   peersConnected: number;
   peersSeen: number;
   uploadedBytes: number;
+}
+
+/** ed2k 也一样没有通道，换成源／服务器／Kad 节点与上传量 */
+export interface Ed2kStats {
+  /** 已知有这个文件的源（含还没连上的） */
+  peers: number;
+  /** 正在传数据的源 */
+  activePeers: number;
+  servers: number;
+  kadNodes: number;
+  uploadedBytes: number;
+}
+
+/** ed2k 搜索的一条结果：链接可以直接拿去建任务 */
+export interface Ed2kSearchResult {
+  hash: string;
+  name: string;
+  size: number;
+  /** 知道有这个文件的节点数 */
+  sources: number;
+  /** 手里有完整文件的节点数 */
+  completeSources: number;
+  link: string;
 }
 
 export interface ChannelView {
@@ -88,6 +111,8 @@ export interface TaskView {
   /** BT 的种子标识，其它协议为 null */
   infoHash: string | null;
   btStats: BtStats | null;
+  /** ed2k 的 peer／服务器／Kad 统计，其它协议为 null */
+  ed2kStats: Ed2kStats | null;
   error: string | null;
 }
 
@@ -96,6 +121,13 @@ export interface StorageInfo {
   path: string | null;
   schemaVersion: number | null;
   message: string | null;
+}
+
+/** BT 的 SOCKS5 代理设置：value 是归一化后的地址，null 表示不用代理 */
+export interface BtProxySetting {
+  value: string | null;
+  /** 保存时 BT 会话已经建好：这次改动要重启应用才生效 */
+  sessionRunning: boolean;
 }
 
 export const TASK_STATUS_LABEL: Record<TaskStatus, string> = {
@@ -111,6 +143,7 @@ export const TASK_STATUS_LABEL: Record<TaskStatus, string> = {
 export const TASK_KIND_LABEL: Record<TaskKind, string> = {
   http: 'HTTP',
   bt: '磁力',
+  ed2k: '电驴',
 };
 
 export const CHANNEL_STATE_LABEL: Record<ChannelState, string> = {
