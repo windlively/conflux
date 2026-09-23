@@ -1,0 +1,109 @@
+name: release
+
+# 打 tag（v*）自动出两平台安装包并发到 Release；也可以手动触发，只构建产物不建 Release。
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 发布用的 tag（例如 v0.1.0）；留空则只构建、不创建 Release
+        required: false
+        type: string
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # 只出 Apple Silicon；Intel Mac 需要 aarch64 之外的第二次 macOS 构建，暂时不做
+          - platform: macos-latest
+            target: aarch64-apple-darwin
+            bundles: app,dmg
+            artifacts: |
+              src-tauri/target/aarch64-apple-darwin/release/bundle/dmg/*.dmg
+          - platform: windows-latest
+            target: x86_64-pc-windows-msvc
+            bundles: nsis
+            artifacts: |
+              src-tauri/target/x86_64-pc-windows-msvc/release/bundle/nsis/*.exe
+              src-tauri/target/x86_64-pc-windows-msvc/release/conflux.exe
+
+    runs-on: ${{ matrix.platform }}
+    env:
+      # 打 tag 推送时用 tag 名；手动触发时用输入框里的 tag
+      RELEASE_TAG: ${{ github.ref_type == 'tag' && github.ref_name || inputs.tag }}
+    defaults:
+      run:
+        # Windows 上的默认 shell 是 pwsh，侧车脚本是 bash 写的，统一成 bash（windows-latest 自带 Git Bash）
+        shell: bash
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 8.10.2
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+          cache-dependency-path: |
+            pnpm-lock.yaml
+            web/pnpm-lock.yaml
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+
+      - uses: swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+          key: ${{ matrix.target }}
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: sidecar/ed2k/go.mod
+          cache-dependency-path: sidecar/ed2k/go.sum
+
+      # 侧车按目标三元组命名放进 src-tauri/binaries/，externalBin 会把它一起打进安装包
+      - name: 构建 ed2k 侧车
+        run: bash sidecar/ed2k/build.sh
+
+      - name: 安装前端与 CLI 依赖
+        run: |
+          pnpm install --frozen-lockfile
+          pnpm --dir web install --frozen-lockfile
+
+      - name: 构建并发到 Release
+        uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          tagName: ${{ env.RELEASE_TAG }}
+          releaseName: ${{ env.RELEASE_TAG != '' && format('川流 Conflux {0}', env.RELEASE_TAG) || '' }}
+          releaseDraft: false
+          releaseBody: |
+            川流 Conflux —— 跨平台多协议下载工具（HTTP/HTTPS、BT／磁力、ed2k 电驴）。
+
+            - **macOS**：`.dmg`，Apple Silicon（arm64）。应用未签名／未公证，首次打开请右键 →「打开」，或到「系统设置 → 隐私与安全性」放行。
+            - **Windows**：`-setup.exe`（NSIS 安装包，x64），内含 ed2k 侧车；需要系统已有 WebView2（Win10 1803 以上一般自带）。
+            - ed2k 侧车会随安装包一起装上，不需要单独下载。
+
+            已知限制：BT 的公网 DHT／tracker 在部分网络下不可用（拿不到 peer、卡在「解析元数据」），可在设置里填 SOCKS5 代理走别的线路；未接做种，下载完即停。
+          args: >-
+            --target ${{ matrix.target }}
+            --bundles ${{ matrix.bundles }}
+            --config '{"build":{"frontendDist":"../web/dist","beforeBuildCommand":"pnpm --dir web build"}}'
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: conflux-${{ matrix.target }}
+          path: ${{ matrix.artifacts }}
+          if-no-files-found: warn

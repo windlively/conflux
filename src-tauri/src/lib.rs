@@ -33,20 +33,23 @@ pub fn run() {
             // 窗口材质拿不到不影响功能，前端拿到 "none" 就用纯色侧边栏
             let material = apply_window_material(app).to_string();
 
-            // 右键菜单里的「检查元素」要挡掉（见 disable_webview_inspector）；
+            // macOS 还要自己关检查器（Windows 上配置里的 devtools 就管用，见 disable_webview_inspector）；
             // 配置里显式写 "devtools": true 时留着，方便自己调试
-            let devtools_wanted = app
-                .config()
-                .app
-                .windows
-                .iter()
-                .find(|window| window.label == "main")
-                .and_then(|window| window.devtools)
-                .unwrap_or(false);
-            if !devtools_wanted {
-                if let Some(window) = app.get_webview_window("main") {
-                    if let Err(err) = disable_webview_inspector(&window) {
-                        eprintln!("关闭 webview 检查器失败：{err}");
+            #[cfg(target_os = "macos")]
+            {
+                let devtools_wanted = app
+                    .config()
+                    .app
+                    .windows
+                    .iter()
+                    .find(|window| window.label == "main")
+                    .and_then(|window| window.devtools)
+                    .unwrap_or(false);
+                if !devtools_wanted {
+                    if let Some(window) = app.get_webview_window("main") {
+                        if let Err(err) = disable_webview_inspector(&window) {
+                            eprintln!("关闭 webview 检查器失败：{err}");
+                        }
                     }
                 }
             }
