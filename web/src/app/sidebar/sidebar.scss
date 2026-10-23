@@ -153,6 +153,17 @@ html[data-platform='windows'] .sidebar-fabs {
   padding: 0 12px 2px;
 }
 
+/* 品牌标记：云下载标志的单色版，viewBox 按图形裁紧，避免被裁切 */
+.brand-mark {
+  width: 28px;
+  height: 28px;
+  flex: none;
+  align-self: center;
+  margin-right: 2px;
+  color: var(--mat-sys-primary);
+  overflow: visible;
+}
+
 .brand-name {
   font: var(--mat-sys-headline-small);
   color: var(--mat-sys-on-surface);

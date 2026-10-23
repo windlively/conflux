@@ -42,6 +42,11 @@ export class Sidebar {
 
   protected readonly totalSpeedLabel = computed(() => formatSpeed(this.store.totalSpeed()));
 
+  /** 有排队、探测或下载中的任务时，品牌标识进入流动状态 */
+  protected readonly flowing = computed(
+    () => (this.store.counts().find((item) => item.key === 'active')?.count ?? 0) > 0,
+  );
+
   /** 代理输入框的草稿：保存失败时保留用户输入，不把值回滚成旧的 */
   protected readonly proxyDraft = signal(this.settings.btProxy());
 

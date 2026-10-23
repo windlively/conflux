@@ -236,3 +236,119 @@ html[data-platform='macos'].sidebar-hidden .content-inner {
 html.sidebar-hidden .content-inner {
   padding-left: 58px;
 }
+
+/* 侧边栏品牌标识：有下载任务时云内水波与沿边流光 */
+/* 下载进行中：云内水波与沿边流光淡入并循环；空闲时完全静止 */
+.brand-water,
+.brand-glow,
+.brand-run {
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.3s ease;
+}
+
+.brand-mark.is-flowing .brand-water,
+.brand-mark.is-flowing .brand-glow,
+.brand-mark.is-flowing .brand-run {
+  opacity: 1;
+}
+
+.brand-mark.is-flowing .brand-water-flow {
+  animation: brand-water-flow 6s linear infinite;
+  will-change: transform;
+}
+
+.brand-mark.is-flowing .brand-water-flow--slow {
+  animation-duration: 9s;
+  animation-direction: reverse;
+}
+
+.brand-glyph {
+  transition: fill-opacity 0.3s ease;
+}
+
+.brand-run-halo {
+  stroke: color-mix(in srgb, currentColor 75%, #fff);
+  stroke-opacity: 0.32;
+}
+
+.brand-run-tail {
+  stroke: color-mix(in srgb, currentColor 40%, #fff);
+  stroke-opacity: 0.32;
+}
+
+.brand-run-head {
+  stroke: color-mix(in srgb, currentColor 14%, #fff);
+  stroke-opacity: 1;
+}
+
+/* 深色主题下标识本身就是浅色：流动时压暗底色，让亮带像光在灯带里穿过 */
+html[data-theme='dark'] .brand-mark.is-flowing .brand-glyph {
+  fill-opacity: 0.5;
+}
+
+html[data-theme='dark'] .brand-mark.is-flowing .brand-glow {
+  opacity: 0.45;
+}
+
+html[data-theme='dark'] .brand-run-halo {
+  stroke-opacity: 0.45;
+}
+
+html[data-theme='dark'] .brand-run-tail {
+  stroke: color-mix(in srgb, currentColor 55%, #fff);
+  stroke-opacity: 0.32;
+}
+
+html[data-theme='dark'] .brand-run-head {
+  stroke: #fff;
+  stroke-opacity: 1;
+}
+
+/* 各层虚线长度不同，用负延迟把头部对齐成一颗彗星：delay = -(130 - 长度) / 130 × 周期 */
+.brand-mark.is-flowing .brand-run-layer {
+  animation: brand-run 4.6s linear infinite;
+}
+
+.brand-mark.is-flowing .brand-run-halo {
+  animation-delay: -3.892s;
+}
+
+.brand-mark.is-flowing .brand-run-tail--1 {
+  animation-delay: -3.751s;
+}
+
+.brand-mark.is-flowing .brand-run-tail--2 {
+  animation-delay: -4.069s;
+}
+
+.brand-mark.is-flowing .brand-run-tail--3 {
+  animation-delay: -4.282s;
+}
+
+.brand-mark.is-flowing .brand-run-head {
+  animation-delay: -4.352s;
+}
+
+@keyframes brand-water-flow {
+  from {
+    transform: translateX(0);
+  }
+  to {
+    transform: translateX(-300px);
+  }
+}
+
+@keyframes brand-run {
+  to {
+    stroke-dashoffset: -130;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .brand-mark.is-flowing .brand-water-flow,
+  .brand-mark.is-flowing .brand-run-layer {
+    animation: none;
+  }
+}
+
