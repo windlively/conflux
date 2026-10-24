@@ -24,7 +24,7 @@ conflux-cli list --json
 
 安装版启动时会从 GitHub Releases 的 `latest.json` 检查新版本；「设置 → 更新」里可以手动检查，也可以关掉启动自动检查。更新包用 Tauri 签名校验，签名私钥只放在发布流水线的 `TAURI_SIGNING_PRIVATE_KEY` Actions secret 里。
 
-注意：首个带更新器的版本需要手动安装一次，之后才能自动升级；macOS 应用未签名／未公证，首次打开仍需在系统里放行。
+注意：首个带更新器的版本需要手动安装一次，之后才能自动升级。macOS 应用只做了 ad-hoc 签名、未公证：首次打开请右键 →「打开」；若提示「已损坏」，确认来源后执行 `sudo xattr -dr com.apple.quarantine /Applications/Conflux.app`（必要时再 `sudo codesign --force --deep --sign - /Applications/Conflux.app`）。
 
 ## 测试与打包
 
