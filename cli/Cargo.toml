@@ -1,0 +1,12 @@
+[package]
+name = "conflux-cli"
+version = "0.2.0"
+edition = "2021"
+description = "川流 Conflux 命令行客户端"
+
+[[bin]]
+name = "conflux-cli"
+path = "src/main.rs"
+
+[dependencies]
+serde_json = "1"

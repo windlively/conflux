@@ -1,0 +1,268 @@
+<div class="settings-page">
+  <header class="page-head">
+    <div class="page-titles">
+      <h1>设置</h1>
+      <p>下载、网络和外观都只保存在这台设备上。</p>
+    </div>
+    <button matButton class="back" (click)="ui.showTasks()">
+      <app-icon name="chevronLeft" />返回任务
+    </button>
+  </header>
+
+  <section class="card">
+    <header class="card-head">
+      <span class="card-icon"><app-icon name="download" /></span>
+      <div class="card-titles">
+        <h2>下载</h2>
+        <p>新任务的保存位置与并发连接数。</p>
+      </div>
+    </header>
+
+    <div class="row">
+      <div class="about">
+        <span class="label">默认下载目录</span>
+        <small>新建任务时自动填入，弹窗里还能改；留空则跟随系统下载目录。</small>
+      </div>
+      <div class="control dir">
+        <span class="path" [title]="settings.downloadDir() || '跟随系统默认目录'">
+          {{ settings.downloadDir() || '跟随系统默认' }}
+        </span>
+        <button matButton (click)="pickDir()">选择</button>
+      </div>
+    </div>
+
+    <div class="row">
+      <div class="about">
+        <span class="label">默认连接数</span>
+        <small>新任务默认开这么多条连接，弹窗里可以改。</small>
+      </div>
+      <div class="control stepper">
+        <button matIconButton aria-label="减少默认连接数" (click)="stepConnections(-1)">−</button>
+        <span class="stepper-value">{{ settings.connections() }}</span>
+        <button matIconButton aria-label="增加默认连接数" (click)="stepConnections(1)">+</button>
+      </div>
+    </div>
+
+    <div class="row">
+      <div class="about">
+        <span class="label">单任务上限</span>
+        <small>一个任务最多能开这么多条连接，新建任务时填不过它。</small>
+      </div>
+      <div class="control stepper">
+        <button matIconButton aria-label="减少单任务上限" (click)="stepMaxTaskConnections(-1)">
+          −
+        </button>
+        <span class="stepper-value">{{ settings.maxTaskConnections() }}</span>
+        <button matIconButton aria-label="增加单任务上限" (click)="stepMaxTaskConnections(1)">
+          +
+        </button>
+      </div>
+    </div>
+
+    <div class="row">
+      <div class="about">
+        <span class="label">总连接数上限</span>
+        <small>所有任务合计，同时在用的连接不超过这么多条，超出的通道排队等空位。</small>
+      </div>
+      <div class="control stepper">
+        <button matIconButton aria-label="减少总连接数上限" (click)="stepMaxTotalConnections(-1)">
+          −
+        </button>
+        <span class="stepper-value">{{ settings.maxTotalConnections() }}</span>
+        <button matIconButton aria-label="增加总连接数上限" (click)="stepMaxTotalConnections(1)">
+          +
+        </button>
+      </div>
+    </div>
+  </section>
+
+  <section class="card">
+    <header class="card-head">
+      <span class="card-icon"><app-icon name="wifi" /></span>
+      <div class="card-titles">
+        <h2>网络</h2>
+        <p>BT 的连接方式；HTTP 下载照常直连。</p>
+      </div>
+    </header>
+
+    <div class="row row-top">
+      <div class="about">
+        <span class="label">BT 代理</span>
+        <small>
+          SOCKS5 代理，只作用于 BT：peer 连接与 tracker 请求走代理。DHT 是 UDP、不走代理，用代理时会关掉它。留空表示不用代理；BT 会话已在运行时改动要重启应用才生效。
+        </small>
+      </div>
+      <div class="control proxy-control">
+        <input
+          class="proxy-input"
+          type="text"
+          aria-label="BT 代理地址"
+          placeholder="socks5://127.0.0.1:7897"
+          [value]="proxyDraft()"
+          (input)="onProxyInput($event)"
+          (change)="saveProxy()"
+        />
+        @if (settings.btProxyError(); as message) {
+          <div class="proxy-error">{{ message }}</div>
+        }
+      </div>
+    </div>
+  </section>
+
+  <section class="card">
+    <header class="card-head">
+      <span class="card-icon"><app-icon name="palette" /></span>
+      <div class="card-titles">
+        <h2>外观</h2>
+        <p>深浅色与主题色，会一起应用到整个界面。</p>
+      </div>
+    </header>
+
+    <div class="row">
+      <div class="about">
+        <span class="label">外观</span>
+        <small>跟随系统时，会随 macOS / Windows 的深浅色切换。</small>
+      </div>
+      <div class="control">
+        <mat-button-toggle-group
+          class="appearance"
+          aria-label="外观"
+          hideSingleSelectionIndicator
+          [value]="settings.themeMode()"
+          (change)="settings.setThemeMode($event.value)"
+        >
+          @for (mode of themeModes; track mode.key) {
+            <mat-button-toggle [value]="mode.key" [title]="mode.full" [attr.aria-label]="mode.full">
+              <app-icon [name]="mode.icon" />{{ mode.label }}
+            </mat-button-toggle>
+          }
+        </mat-button-toggle-group>
+      </div>
+    </div>
+
+    <div class="row">
+      <div class="about">
+        <span class="label">主题色</span>
+        <small>按钮、进度条和下载中的标识会一起变色。</small>
+      </div>
+      <div class="control">
+        <div class="accents">
+          @for (accent of accents; track accent.key) {
+            <button
+              type="button"
+              class="accent"
+              [class.accent-active]="settings.accent() === accent.key"
+              [style.--dot]="'var(--accent-' + accent.key + ')'"
+              [attr.aria-label]="accent.label"
+              [title]="accent.label"
+              (click)="settings.setAccent(accent.key)"
+            ></button>
+          }
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section class="card">
+    <header class="card-head">
+      <span class="card-icon"><app-icon name="tune" /></span>
+      <div class="card-titles">
+        <h2>系统</h2>
+        <p>窗口和状态栏的行为。</p>
+      </div>
+    </header>
+
+    <div class="row">
+      <div class="about">
+        <span class="label">状态栏图标</span>
+        <small>在 macOS 菜单栏或 Windows 通知区域显示川流，点开能看到进行中的任务。</small>
+      </div>
+      <div class="control">
+        <mat-slide-toggle
+          aria-label="显示状态栏图标"
+          [checked]="settings.trayIcon()"
+          (change)="settings.setTrayIcon($event.checked)"
+        />
+      </div>
+    </div>
+
+    <div class="row" [class.row-muted]="!settings.trayIcon()">
+      <div class="about">
+        <span class="label">关窗驻留托盘</span>
+        @if (settings.trayIcon()) {
+          <small>开启后关闭窗口只是隐藏，下载在后台继续，从状态栏的「退出川流」才真正结束；关闭后关窗即退出应用。</small>
+        } @else {
+          <small>需要先开启状态栏图标；当前关闭窗口会直接退出应用。</small>
+        }
+      </div>
+      <div class="control">
+        <mat-slide-toggle
+          aria-label="关窗驻留托盘"
+          [checked]="settings.closeToTray()"
+          [disabled]="!settings.trayIcon()"
+          (change)="settings.setCloseToTray($event.checked)"
+        />
+      </div>
+    </div>
+  </section>
+
+  <section class="card">
+    <header class="card-head">
+      <span class="card-icon"><app-icon name="terminal" /></span>
+      <div class="card-titles">
+        <h2>命令行</h2>
+        <p>让终端或 Agent 通过 conflux-cli 调用川流的下载引擎。</p>
+      </div>
+    </header>
+
+    <div class="row">
+      <div class="about">
+        <span class="label">命令行工具</span>
+        <small>开启后，本机的 conflux-cli 可以把任务交给川流，和界面共用队列、连接数上限与断点续传；应用需要保持运行。关闭后 CLI 无法连接。</small>
+      </div>
+      <div class="control">
+        <mat-slide-toggle
+          aria-label="启用命令行工具"
+          [checked]="settings.cliEnabled()"
+          (change)="settings.setCliEnabled($event.checked)"
+        />
+      </div>
+    </div>
+  </section>
+
+  <section class="card">
+    <header class="card-head">
+      <span class="card-icon"><app-icon name="storage" /></span>
+      <div class="card-titles">
+        <h2>任务数据</h2>
+        <p>任务清单与断点进度都记在本机，换机器不会同步。</p>
+      </div>
+    </header>
+
+    <div class="row">
+      @if (store.storage(); as storage) {
+        <div class="about">
+          @if (storage.available) {
+            <span class="label">存储位置</span>
+            <small class="path" [title]="storage.path ?? ''">{{ storage.path }}</small>
+          } @else {
+            <span class="label warn">未启用任务持久化</span>
+            <small>{{ storage.message }}</small>
+            @if (storage.path) {
+              <small class="path" [title]="storage.path">预期位置 {{ storage.path }}</small>
+            }
+          }
+        </div>
+        @if (storage.available) {
+          <div class="control">
+            <span class="chip">结构版本 {{ storage.schemaVersion }}</span>
+          </div>
+        }
+      } @else {
+        <div class="about">
+          <small>读取存储状态…</small>
+        </div>
+      }
+    </div>
+  </section>
+</div>

@@ -286,201 +286,6 @@ html[data-platform='windows'] .sidebar-fabs {
   flex: 1;
 }
 
-/* ---------- 设置 ---------- */
-
-/* 不做卡片底色：靠细线分组与统一的行高、左右内缘撑出秩序 */
-.settings {
-  display: flex;
-  flex-direction: column;
-}
-
-.setting {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-  padding: 10px 0;
-}
-
-.setting + .setting {
-  border-top: 1px solid var(--mat-sys-outline-variant);
-}
-
-.setting:first-child {
-  padding-top: 4px;
-}
-
-.setting:last-child {
-  padding-bottom: 0;
-}
-
-.setting-row {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 8px;
-  min-height: 26px;
-}
-
-.setting-label {
-  font: var(--mat-sys-label-medium);
-  color: var(--mat-sys-on-surface-variant);
-}
-
-/* 设置行里的按钮都收小一号，免得「选择」看着像条链接、加减号抢镜 */
-.setting .mini {
-  --mat-button-text-container-height: 26px;
-  --mat-button-text-horizontal-padding: 8px;
-  --mat-button-text-label-text-size: 12px;
-  color: var(--mat-sys-primary);
-}
-
-.appearance {
-  width: 100%;
-  --mat-button-toggle-height: 30px;
-  --mat-button-toggle-divider-color: var(--mat-sys-outline-variant);
-}
-
-.appearance mat-button-toggle {
-  flex: 1 1 0;
-  min-width: 0;
-  font: var(--mat-sys-label-small);
-  white-space: nowrap;
-}
-
-.appearance app-icon {
-  --icon-size: 14px;
-}
-
-/* 拖到比默认宽度还窄时，内外边距各收一格：窄栏里的内容宽度仍与默认宽度相当，
-   设置行的标签不会被挤成两三行，三段控件也还放得下「图标＋文字」 */
-.sidebar-narrow {
-  padding-inline: 8px;
-}
-
-.sidebar-narrow ::ng-deep .section-body {
-  padding-left: 16px;
-}
-
-/* 组件自带的 16px 段内边距在三段控件里放不下，收到 5px；
-   侧边栏只有 240px，这里必须精确控制 */
-.appearance ::ng-deep .mat-button-toggle-label-content {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  padding: 0 5px;
-}
-
-/* 三段控件里文字与图标挤在窄栏里，把组件自带的内边距收一收 */
-.appearance ::ng-deep .mat-button-toggle-button {
-  padding: 0 6px;
-}
-
-.setting-value {
-  font: var(--mat-sys-body-small);
-  color: var(--mat-sys-on-surface-variant);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-/* 说明收进「i」按钮，点一下才弹出来，行里不常驻文字 */
-.setting .info {
-  --mat-icon-button-state-layer-size: 20px;
-  --mat-icon-button-icon-size: 14px;
-  margin-inline-start: -2px;
-  opacity: 0.7;
-  color: var(--mat-sys-on-surface-variant);
-}
-
-.setting .info:hover {
-  opacity: 1;
-}
-
-/* app-icon 读的是 --icon-size，不是按钮的 --mat-icon-button-icon-size：
-   不补这一行图标会按默认 18px 画，撑出按钮还给行尾顶出 1px 溢出 */
-.setting .info app-icon {
-  --icon-size: 14px;
-}
-
-/* BT 代理是个文本框：做得像设置行里的值，别比旁边的控件抢眼 */
-.proxy-input {
-  width: 100%;
-  height: 28px;
-  padding: 0 8px;
-  border: 1px solid var(--mat-sys-outline-variant);
-  border-radius: var(--mat-sys-corner-small);
-  background: var(--mat-sys-surface-container-high);
-  color: var(--mat-sys-on-surface);
-  font: var(--mat-sys-body-small);
-}
-
-.proxy-input::placeholder {
-  color: var(--mat-sys-on-surface-variant);
-  opacity: 0.7;
-}
-
-.proxy-input:focus {
-  outline: none;
-  border-color: var(--mat-sys-primary);
-}
-
-/* 后端拒绝这个地址时的原因，留在输入框下面 */
-.proxy-error {
-  font: var(--mat-sys-body-small);
-  color: var(--mat-sys-error);
-}
-
-.stepper {
-  display: flex;
-  align-items: center;
-}
-
-/* 加减号是文字不是图标：字号跟着图标槽位一起收 */
-.stepper button {
-  --mat-icon-button-state-layer-size: 26px;
-  --mat-icon-button-icon-size: 16px;
-  color: var(--mat-sys-on-surface-variant);
-}
-
-.stepper-value {
-  min-width: 20px;
-  text-align: center;
-  font: var(--mat-sys-label-large);
-  font-variant-numeric: tabular-nums;
-  color: var(--mat-sys-on-surface);
-}
-
-/* ---------- 主题色 ---------- */
-
-.accents {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 10px;
-  padding: 6px 0 2px;
-}
-
-.accent {
-  width: 22px;
-  height: 22px;
-  padding: 0;
-  border: none;
-  border-radius: var(--mat-sys-corner-full);
-  background: var(--dot);
-  cursor: pointer;
-  box-shadow: 0 0 0 0 transparent;
-  transition:
-    transform 0.18s cubic-bezier(0.2, 0, 0, 1),
-    box-shadow 0.18s cubic-bezier(0.2, 0, 0, 1);
-}
-
-.accent:hover {
-  transform: scale(1.12);
-}
-
-.accent-active {
-  box-shadow: 0 0 0 2px var(--mat-sys-surface-container), 0 0 0 4px var(--dot);
-}
-
 /* ---------- 速度与存储 ---------- */
 
 .sidebar-speed {
@@ -501,27 +306,49 @@ html[data-platform='windows'] .sidebar-fabs {
   color: var(--mat-sys-on-surface);
 }
 
+/* 设置入口钉在侧栏底部，和筛选行同一套手感 */
+.settings-entry {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  height: 36px;
+  padding: 0 12px;
+  border: none;
+  border-radius: var(--mat-sys-corner-full);
+  background: transparent;
+  color: var(--mat-sys-on-surface-variant);
+  font: var(--mat-sys-label-large);
+  text-align: left;
+  cursor: pointer;
+  transition:
+    background-color 0.18s cubic-bezier(0.2, 0, 0, 1),
+    color 0.18s cubic-bezier(0.2, 0, 0, 1);
+}
+
+.settings-entry app-icon {
+  --icon-size: 18px;
+}
+
+.settings-entry:hover {
+  background: color-mix(in srgb, var(--mat-sys-on-surface) 8%, transparent);
+}
+
+.settings-entry-active,
+.settings-entry-active:hover {
+  background: var(--mat-sys-secondary-container);
+  color: var(--mat-sys-on-secondary-container);
+  font-weight: 600;
+}
+
+.settings-chevron {
+  margin-left: auto;
+  font-size: 16px;
+  opacity: 0.6;
+}
+
 @keyframes speed-in {
   from {
     opacity: 0;
     transform: translateY(4px);
   }
-}
-
-.sidebar-foot {
-  display: flex;
-  flex-direction: column;
-  gap: 3px;
-  padding-top: 10px;
-  border-top: 1px solid var(--mat-sys-outline-variant);
-  font: var(--mat-sys-body-small);
-  color: var(--mat-sys-on-surface-variant);
-}
-
-.sidebar-foot .warn {
-  color: #b26a00;
-}
-
-.path {
-  word-break: break-all;
 }

@@ -1,0 +1,316 @@
+:host {
+  display: block;
+  animation: page-in 0.26s cubic-bezier(0.2, 0, 0, 1);
+}
+
+@keyframes page-in {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+}
+
+.settings-page {
+  width: 100%;
+  max-width: 820px;
+  margin: 0 auto;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  padding-bottom: 24px;
+}
+
+/* ---------- 页头 ---------- */
+
+.page-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 2px 2px 4px;
+}
+
+.page-titles h1 {
+  margin: 0;
+  font: var(--mat-sys-headline-medium);
+  color: var(--mat-sys-on-surface);
+}
+
+.page-titles p {
+  margin: 4px 0 0;
+  font: var(--mat-sys-body-small);
+  color: var(--mat-sys-on-surface-variant);
+}
+
+.back {
+  color: var(--mat-sys-on-surface-variant);
+  flex: none;
+}
+
+.back app-icon {
+  --icon-size: 18px;
+}
+
+/* ---------- 卡片 ---------- */
+
+.card {
+  padding: 18px 22px 6px;
+  border-radius: var(--mat-sys-corner-large);
+  background: var(--mat-sys-surface-container-low);
+}
+
+.card-head {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  padding-bottom: 8px;
+}
+
+.card-icon {
+  display: grid;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  flex: none;
+  border-radius: var(--mat-sys-corner-medium);
+  background: var(--mat-sys-primary-container);
+  color: var(--mat-sys-on-primary-container);
+}
+
+.card-icon app-icon {
+  --icon-size: 18px;
+}
+
+.card-titles h2 {
+  margin: 1px 0 0;
+  font: var(--mat-sys-title-small);
+  font-weight: 600;
+  color: var(--mat-sys-on-surface);
+}
+
+.card-titles p {
+  margin: 2px 0 0;
+  font: var(--mat-sys-body-small);
+  color: var(--mat-sys-on-surface-variant);
+}
+
+/* ---------- 行 ---------- */
+
+.row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 10px 28px;
+  padding: 14px 0;
+  border-top: 1px solid var(--mat-sys-outline-variant);
+}
+
+.row-top {
+  align-items: start;
+}
+
+.about {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+}
+
+.label {
+  font: var(--mat-sys-label-large);
+  color: var(--mat-sys-on-surface);
+}
+
+.about small {
+  font: var(--mat-sys-body-small);
+  line-height: 1.55;
+  color: var(--mat-sys-on-surface-variant);
+}
+
+.about .warn {
+  color: #b26a00;
+}
+
+.control {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  min-width: 0;
+}
+
+.row-muted .about {
+  opacity: 0.55;
+}
+
+/* ---------- 下载目录与步进器 ---------- */
+
+.dir {
+  max-width: 420px;
+}
+
+.path {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.dir .path {
+  font: var(--mat-sys-body-small);
+  color: var(--mat-sys-on-surface-variant);
+}
+
+.dir button {
+  flex: none;
+  --mat-button-text-container-height: 32px;
+  --mat-button-text-horizontal-padding: 10px;
+}
+
+.stepper {
+  gap: 0;
+}
+
+.stepper button {
+  --mat-icon-button-state-layer-size: 32px;
+  --mat-icon-button-icon-size: 18px;
+  color: var(--mat-sys-on-surface-variant);
+}
+
+.stepper-value {
+  min-width: 30px;
+  text-align: center;
+  font: var(--mat-sys-label-large);
+  font-variant-numeric: tabular-nums;
+  color: var(--mat-sys-on-surface);
+}
+
+/* ---------- BT 代理 ---------- */
+
+.proxy-control {
+  flex-direction: column;
+  align-items: flex-end;
+  width: min(360px, 100%);
+}
+
+.proxy-input {
+  width: 100%;
+  height: 34px;
+  padding: 0 10px;
+  border: 1px solid var(--mat-sys-outline-variant);
+  border-radius: var(--mat-sys-corner-small);
+  background: var(--mat-sys-surface-container-high);
+  color: var(--mat-sys-on-surface);
+  font: var(--mat-sys-body-small);
+  transition: border-color 0.18s cubic-bezier(0.2, 0, 0, 1);
+}
+
+.proxy-input::placeholder {
+  color: var(--mat-sys-on-surface-variant);
+  opacity: 0.7;
+}
+
+.proxy-input:focus {
+  outline: none;
+  border-color: var(--mat-sys-primary);
+}
+
+.proxy-error {
+  width: 100%;
+  font: var(--mat-sys-body-small);
+  color: var(--mat-sys-error);
+  text-align: right;
+}
+
+/* ---------- 外观 ---------- */
+
+.appearance {
+  --mat-button-toggle-height: 34px;
+  --mat-button-toggle-divider-color: var(--mat-sys-outline-variant);
+}
+
+.appearance mat-button-toggle {
+  font: var(--mat-sys-label-medium);
+  white-space: nowrap;
+}
+
+.appearance app-icon {
+  --icon-size: 15px;
+}
+
+.appearance ::ng-deep .mat-button-toggle-label-content {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 0 12px;
+}
+
+.accents {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 10px;
+}
+
+.accent {
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  border: none;
+  border-radius: var(--mat-sys-corner-full);
+  background: var(--dot);
+  cursor: pointer;
+  box-shadow: 0 0 0 0 transparent;
+  transition:
+    transform 0.18s cubic-bezier(0.2, 0, 0, 1),
+    box-shadow 0.18s cubic-bezier(0.2, 0, 0, 1);
+}
+
+.accent:hover {
+  transform: scale(1.14);
+}
+
+.accent-active {
+  box-shadow:
+    0 0 0 2px var(--mat-sys-surface-container-low),
+    0 0 0 4px var(--dot);
+}
+
+/* ---------- 任务数据 ---------- */
+
+.chip {
+  padding: 5px 10px;
+  border-radius: var(--mat-sys-corner-full);
+  background: var(--mat-sys-surface-container-high);
+  color: var(--mat-sys-on-surface-variant);
+  font: var(--mat-sys-label-small);
+  white-space: nowrap;
+}
+
+/* 窗口较窄时控件换到下一行，标签仍然完整可读 */
+@media (max-width: 720px) {
+  .row {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 10px;
+  }
+
+  .control {
+    justify-content: flex-start;
+  }
+
+  .accents {
+    justify-content: flex-start;
+  }
+
+  .proxy-control {
+    align-items: flex-start;
+    width: 100%;
+  }
+
+  .proxy-error {
+    text-align: left;
+  }
+
+  .dir {
+    max-width: 100%;
+  }
+}

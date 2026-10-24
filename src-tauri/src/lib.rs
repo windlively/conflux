@@ -1,6 +1,8 @@
+mod cli_bridge;
 mod commands;
 pub mod download;
 pub mod store;
+mod tray;
 
 use std::sync::Arc;
 
@@ -15,14 +17,40 @@ pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
+        // 关窗行为：驻留开启时只隐藏窗口（下载与托盘菜单都还在）；关闭时直接退出。
+        // macOS 上不驻留也要显式退出——不然窗口销毁后进程留在 Dock，托盘却再也唤不回来。
+        .on_window_event(|window, event| {
+            if window.label() != "main" {
+                return;
+            }
+            if let tauri::WindowEvent::CloseRequested { api, .. } = event {
+                let hide = window
+                    .app_handle()
+                    .try_state::<tray::TrayState>()
+                    .map(|tray| tray.hide_on_close())
+                    .unwrap_or(false);
+                api.prevent_close();
+                if hide {
+                    let _ = window.hide();
+                } else {
+                    window.app_handle().exit(0);
+                }
+            }
+        })
         .setup(|app| {
             let handle = app.handle().clone();
-            let sink: EventSink = Arc::new(move |event| match event {
-                ManagerEvent::Update(view) => {
-                    let _ = handle.emit("task:update", view);
+            let sink: EventSink = Arc::new(move |event| {
+                match &event {
+                    ManagerEvent::Update(view) => {
+                        let _ = handle.emit("task:update", view);
+                    }
+                    ManagerEvent::Removed(id) => {
+                        let _ = handle.emit("task:removed", id);
+                    }
                 }
-                ManagerEvent::Removed(id) => {
-                    let _ = handle.emit("task:removed", id);
+                // 状态栏菜单跟着任务状态走；没开托盘图标时只维护列表，不重建菜单
+                if let Some(tray) = handle.try_state::<tray::TrayState>() {
+                    tray.observe(&event);
                 }
             });
             let default_dir = app
@@ -80,11 +108,31 @@ pub fn run() {
             if let Ok(data_dir) = app.path().app_data_dir() {
                 manager.set_data_dir(data_dir);
             }
+            // 托盘默认隐藏，等前端把本机保存的开关推过来；建不出来不影响下载
+            let tray = match tray::TrayState::new(app.handle(), &manager.list()) {
+                Ok(tray) => Some(tray),
+                Err(err) => {
+                    eprintln!("状态栏图标不可用：{err}");
+                    None
+                }
+            };
+            // 命令行桥接默认不启动，等前端把设置里的开关推过来
+            let cli = app
+                .path()
+                .app_data_dir()
+                .ok()
+                .map(|dir| cli_bridge::CliService::new(manager.clone(), dir));
             app.manage(AppState {
                 manager,
                 store,
                 material,
             });
+            if let Some(cli) = cli {
+                app.manage(cli);
+            }
+            if let Some(tray) = tray {
+                app.manage(tray);
+            }
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
@@ -104,9 +152,48 @@ pub fn run() {
             commands::window_material,
             commands::set_max_connections,
             commands::set_bt_proxy,
+            commands::set_tray_enabled,
+            commands::set_close_to_tray,
+            commands::set_app_icon,
+            commands::set_cli_enabled,
         ])
-        .run(tauri::generate_context!())
-        .expect("error while running tauri application");
+        .build(tauri::generate_context!())
+        .expect("error while building tauri application")
+        .run(|app_handle, event| {
+            // 关窗驻留后窗口是隐藏的，点 Dock 图标时 macOS 发 Reopen，把它叫回来
+            #[cfg(target_os = "macos")]
+            {
+                if let tauri::RunEvent::Reopen { .. } = event {
+                    if let Some(window) = app_handle.get_webview_window("main") {
+                        let _ = window.show();
+                        let _ = window.set_focus();
+                    }
+                }
+            }
+            #[cfg(not(target_os = "macos"))]
+            {
+                let _ = (app_handle, event);
+            }
+        });
+}
+
+/// macOS 的 .icns 不会跟着系统外观切换，Dock 图标只能在运行时替换。
+/// `dark` 为 true 时用深色版，前端在启动与主题变化时调用。
+#[cfg(target_os = "macos")]
+pub(crate) fn apply_dock_icon(dark: bool) -> Result<(), String> {
+    use objc2::{AnyThread, MainThreadMarker};
+    use objc2_app_kit::{NSApplication, NSImage};
+    use objc2_foundation::NSData;
+
+    const LIGHT: &[u8] = include_bytes!("../icons/dock-light.png");
+    const DARK: &[u8] = include_bytes!("../icons/dock-dark.png");
+
+    let marker = MainThreadMarker::new().ok_or("切换 Dock 图标必须在主线程")?;
+    let data = NSData::with_bytes(if dark { DARK } else { LIGHT });
+    let image = NSImage::initWithData(NSImage::alloc(), &data).ok_or("Dock 图标 PNG 无法解码")?;
+    let app = NSApplication::sharedApplication(marker);
+    unsafe { app.setApplicationIconImage(Some(&image)) };
+    Ok(())
 }
 
 /// 窗口材质：macOS 优先液态玻璃（macOS 26 起），拿不到再退回系统侧边栏磨砂；

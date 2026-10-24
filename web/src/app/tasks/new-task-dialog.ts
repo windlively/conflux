@@ -1,6 +1,6 @@
 import { ChangeDetectionStrategy, Component, computed, inject, signal } from '@angular/core';
 import { MatButtonModule } from '@angular/material/button';
-import { MatDialogModule, MatDialogRef } from '@angular/material/dialog';
+import { MatDialog, MatDialogModule, MatDialogRef } from '@angular/material/dialog';
 import { MatFormFieldModule } from '@angular/material/form-field';
 import { MatInputModule } from '@angular/material/input';
 
@@ -18,6 +18,15 @@ import { Settings } from '../core/settings';
 import type { Ed2kSearchResult, TorrentFile, TorrentPreview } from '../core/types';
 import { Ed2kSearch } from './ed2k-search';
 import { FilePicker } from './file-picker';
+
+/** 侧边栏按钮和状态栏菜单都从这里开弹窗，保证尺寸与焦点一致 */
+export function openNewTaskDialog(dialog: MatDialog) {
+  return dialog.open(NewTaskDialog, {
+    width: '560px',
+    maxWidth: '92vw',
+    autoFocus: 'textarea',
+  });
+}
 
 /** 预览里挑文件时，任务是怎么来的：磁力要么按原文再挂一次，要么是本地种子文件 */
 type PreviewSource =

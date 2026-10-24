@@ -1,6 +1,14 @@
 import { Injectable, computed, effect, signal } from '@angular/core';
 
-import { setBtProxy, setMaxConnections, setWindowTheme } from './api';
+import {
+  setAppIcon,
+  setBtProxy,
+  setCliEnabled,
+  setCloseToTray,
+  setMaxConnections,
+  setTrayEnabled,
+  setWindowTheme,
+} from './api';
 
 export interface AccentOption {
   key: string;
@@ -33,6 +41,9 @@ const KEY_MAX_TOTAL_CONNECTIONS = 'conflux.maxTotalConnections';
 const KEY_BT_PROXY = 'conflux.btProxy';
 const KEY_ACCENT = 'conflux.accent';
 const KEY_THEME = 'conflux.theme';
+const KEY_TRAY = 'conflux.trayIcon';
+const KEY_CLOSE_TO_TRAY = 'conflux.closeToTray';
+const KEY_CLI = 'conflux.cli';
 
 /** 单个任务的通道数上限，与 Rust 侧 Task::new / persist 的夹取保持一致 */
 export const TASK_CONNECTIONS_LIMIT = 32;
@@ -62,6 +73,12 @@ export class Settings {
   );
   readonly accent = signal(localStorage.getItem(KEY_ACCENT) ?? ACCENTS[0].key);
   readonly themeMode = signal<ThemeMode>(readStoredTheme());
+  /** 是否在状态栏（macOS 菜单栏 / Windows 通知区域）显示图标；默认开启 */
+  readonly trayIcon = signal(localStorage.getItem(KEY_TRAY) !== '0');
+  /** 关闭主窗口时缩到状态栏继续下载；默认开启 */
+  readonly closeToTray = signal(localStorage.getItem(KEY_CLOSE_TO_TRAY) !== '0');
+  /** 是否允许本机 conflux-cli 提交任务；默认关闭 */
+  readonly cliEnabled = signal(localStorage.getItem(KEY_CLI) === '1');
   readonly systemDark = signal(darkQuery.matches);
   /** BT 的 SOCKS5 代理；空串表示不用代理 */
   readonly btProxy = signal(localStorage.getItem(KEY_BT_PROXY) ?? '');
@@ -96,6 +113,22 @@ export class Settings {
       void setMaxConnections(this.maxTotalConnections()).catch(() => undefined);
     });
     effect(() => localStorage.setItem(KEY_BT_PROXY, this.btProxy()));
+    // 托盘由后端持有，本机设置只负责在启动和切换时把开关推过去
+    effect(() => {
+      const enabled = this.trayIcon();
+      localStorage.setItem(KEY_TRAY, enabled ? '1' : '0');
+      void setTrayEnabled(enabled).catch(() => undefined);
+    });
+    effect(() => {
+      const enabled = this.closeToTray();
+      localStorage.setItem(KEY_CLOSE_TO_TRAY, enabled ? '1' : '0');
+      void setCloseToTray(enabled).catch(() => undefined);
+    });
+    effect(() => {
+      const enabled = this.cliEnabled();
+      localStorage.setItem(KEY_CLI, enabled ? '1' : '0');
+      void setCliEnabled(enabled).catch(() => undefined);
+    });
     // BT 代理存在后端内存里、建会话时生效；开局把本机保存的值推一次（空值推了也无妨）。
     // 这一步失败不提示：只有用户主动保存时，才需要把原因显示在设置里。
     void this.saveBtProxy(this.btProxy(), { report: false });
@@ -112,6 +145,8 @@ export class Settings {
       localStorage.setItem(KEY_THEME, this.themeMode());
       // 原生材质与 WebView 的 prefers-color-scheme 都挂在窗口外观上
       void setWindowTheme(this.themeMode() === 'system' ? null : theme).catch(() => undefined);
+      // Dock 图标用浅/深两套图：macOS 不会按外观切 .icns，启动和换主题时主动换
+      void setAppIcon(theme === 'dark').catch(() => undefined);
     });
   }
 
@@ -140,6 +175,18 @@ export class Settings {
 
   setThemeMode(mode: ThemeMode) {
     this.themeMode.set(mode);
+  }
+
+  setTrayIcon(enabled: boolean) {
+    this.trayIcon.set(enabled);
+  }
+
+  setCloseToTray(enabled: boolean) {
+    this.closeToTray.set(enabled);
+  }
+
+  setCliEnabled(enabled: boolean) {
+    this.cliEnabled.set(enabled);
   }
 
   /**

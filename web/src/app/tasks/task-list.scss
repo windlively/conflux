@@ -8,6 +8,22 @@
 }
 
 /* 新任务淡入上浮，移除时淡出，列表变化不再「啪」地跳一下 */
+/* 从状态栏菜单点进来时闪一圈主题色，平滑淡出 */
+.tasks > li {
+  border-radius: var(--mat-sys-corner-large);
+  box-shadow: 0 0 0 0 transparent;
+  transition:
+    box-shadow 0.45s cubic-bezier(0.2, 0, 0, 1),
+    background-color 0.45s cubic-bezier(0.2, 0, 0, 1);
+}
+
+.tasks > li.task-flash {
+  background-color: color-mix(in srgb, var(--mat-sys-primary) 9%, transparent);
+  box-shadow:
+    0 0 0 2px var(--mat-sys-primary),
+    0 0 24px color-mix(in srgb, var(--mat-sys-primary) 30%, transparent);
+}
+
 .card-in {
   animation: task-card-in 0.28s cubic-bezier(0.2, 0, 0, 1);
 }

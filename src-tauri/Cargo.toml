@@ -1,6 +1,6 @@
 [package]
 name = "conflux"
-version = "0.1.0"
+version = "0.2.0"
 description = "川流 Conflux —— 跨平台多协议下载工具"
 authors = ["you"]
 edition = "2021"
@@ -21,7 +21,7 @@ tauri-build = { version = "2", features = [] }
 # macos-private-api 对应 tauri.conf.json 的 app.macOSPrivateApi（透明窗口要用）；
 # 它写在基础配置里而不是 tauri.macos.conf.json，否则交叉编译 Windows 时
 # CLI 会认为这个特性是多余的、把它从这一行删掉（2026-09-19、09-23 各中过一次）
-tauri = { version = "2", features = ["macos-private-api"] }
+tauri = { version = "2", features = ["macos-private-api", "tray-icon", "image-png"] }
 tauri-plugin-opener = "2"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
@@ -63,7 +63,13 @@ objc2-app-kit = { version = "0.3", default-features = false, features = [
   "std",
   "NSResponder",
   "NSView",
+  "NSApplication",
+  "NSImage",
   "NSGlassEffectView",
+] }
+objc2-foundation = { version = "0.3", default-features = false, features = [
+  "std",
+  "NSData",
 ] }
 
 # Read the optimization guideline for more details: https://tauri.app/concept/size/#cargo-configuration

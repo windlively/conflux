@@ -155,3 +155,10 @@ export const CHANNEL_STATE_LABEL: Record<ChannelState, string> = {
   stopped: '已停止',
   failed: '失败',
 };
+
+/** 状态栏托盘菜单点完后端发来的动作 */
+export interface TrayAction {
+  action: 'task' | 'new-task';
+  /** action 为 task 时对应的任务 id */
+  id?: string | null;
+}

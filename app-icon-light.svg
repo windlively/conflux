@@ -1,7 +1,7 @@
 <!-- 川流 Conflux 应用图标（浅色外观）。
      源设计在 ~/AgentHome/chuanliu-logo；滤镜与材质据此渲染。
      平台图标当前由深色源生成：pnpm tauri icon app-icon.png -o src-tauri/icons
-     如需浅色平台图标：pnpm tauri icon app-icon-light.png -o <输出目录> -->
+     macOS 的 icon.icns 用浅色版；Dock 图标运行时按深浅色切换 -->
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="-64 -64 640 640" role="img" aria-labelledby="title desc">
   <title id="title">川流 · 液态玻璃应用图标</title>
   <desc id="desc">紫罗兰液态玻璃底板上，白色云下载标识保持清晰，带柔和高光与内缘光。</desc>

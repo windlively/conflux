@@ -13,9 +13,14 @@ function storedWidth(): number {
   return raw === null ? SIDEBAR_DEFAULT : clampWidth(Number(raw));
 }
 
+export type AppView = 'tasks' | 'settings';
+
 /** 界面级状态：侧边栏折叠与宽度，都记在 localStorage，重启后保持 */
 @Injectable({ providedIn: 'root' })
 export class UiState {
+  /** 内容区当前显示任务列表还是设置页；不做持久化，启动总是回到任务 */
+  readonly view = signal<AppView>('tasks');
+
   readonly sidebarOpen = signal(localStorage.getItem('conflux.sidebar') !== 'collapsed');
 
   readonly sidebarWidth = signal(storedWidth());
@@ -37,6 +42,14 @@ export class UiState {
 
   toggleSidebar() {
     this.sidebarOpen.update((open) => !open);
+  }
+
+  showSettings() {
+    this.view.set('settings');
+  }
+
+  showTasks() {
+    this.view.set('tasks');
   }
 
   /** 夹取范围在 setter 里做，拖拽时可以放心地把指针位置直接喂进来 */

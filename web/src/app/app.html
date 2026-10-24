@@ -13,7 +13,11 @@
         </div>
       }
 
-      <app-task-list [tasks]="store.visible()" [emptyText]="emptyText()" />
+      @if (ui.view() === 'settings') {
+        <app-settings-page />
+      } @else {
+        <app-task-list [tasks]="store.visible()" [emptyText]="emptyText()" />
+      }
     </div>
   </main>
 </div>

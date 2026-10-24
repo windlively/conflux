@@ -7,6 +7,7 @@ import type {
   StorageInfo,
   TaskView,
   TorrentPreview,
+  TrayAction,
 } from './types';
 
 /** `files` 是预览后勾选的文件序号，null 表示全都下 */
@@ -60,6 +61,25 @@ export const windowMaterial = () => invoke<string>('window_material');
 /** 设置所有任务合计的连接数上限（后端的全局闸门），返回夹取后真正生效的值 */
 export const setMaxConnections = (limit: number) =>
   invoke<number>('set_max_connections', { limit });
+
+/** 显示／隐藏状态栏图标（macOS 菜单栏、Windows 通知区域） */
+export const setTrayEnabled = (enabled: boolean) =>
+  invoke<void>('set_tray_enabled', { enabled });
+
+/** 让 Dock 图标跟随界面深浅色（macOS 的 .icns 不会自己切） */
+export const setAppIcon = (dark: boolean) => invoke<void>('set_app_icon', { dark });
+
+/** 开启本机命令行服务，让 conflux-cli 能提交任务 */
+export const setCliEnabled = (enabled: boolean) =>
+  invoke<void>('set_cli_enabled', { enabled });
+
+/** 关窗时缩到状态栏（true）还是退出应用（false） */
+export const setCloseToTray = (enabled: boolean) =>
+  invoke<void>('set_close_to_tray', { enabled });
+
+/** 托盘菜单的动作：点了某个任务，或点了「新建任务…」 */
+export const onTrayAction = (handler: (action: TrayAction) => void): Promise<UnlistenFn> =>
+  listen<TrayAction>('tray:action', (event) => handler(event.payload));
 
 /** 设置 BT 的 SOCKS5 代理（peer 连接与 tracker 请求走它）；空串表示关闭代理 */
 export const setBtProxy = (url: string) => invoke<BtProxySetting>('set_bt_proxy', { url });

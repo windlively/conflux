@@ -17,7 +17,7 @@ import { TaskItem } from './task-item';
     } @else {
       <ul class="tasks">
         @for (task of tasks(); track task.id) {
-          <li animate.enter="card-in" animate.leave="card-out">
+          <li [attr.data-task-id]="task.id" animate.enter="card-in" animate.leave="card-out">
             <app-task-item [task]="task" />
           </li>
         }

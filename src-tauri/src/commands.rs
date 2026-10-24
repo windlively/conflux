@@ -175,6 +175,53 @@ pub struct BtProxySetting {
 
 /// 设置 BT 的 SOCKS5 代理（peer 连接与 tracker 请求走它）；空串表示关闭代理。
 /// 传空串之外的非 socks5 地址会被拒绝，界面据此提示格式。
+/// 显示／隐藏状态栏图标（macOS 菜单栏、Windows 通知区域）
+/// 开启／关闭本机命令行服务（127.0.0.1 + 临时 token）
+#[tauri::command]
+pub fn set_cli_enabled(
+    cli: State<'_, crate::cli_bridge::CliService>,
+    enabled: bool,
+) -> Result<(), String> {
+    cli.set_enabled(enabled)
+}
+
+/// Dock 图标跟随界面深浅色；macOS 之外没有这个机制，直接忽略
+#[tauri::command]
+pub fn set_app_icon(app: AppHandle, dark: bool) -> Result<(), String> {
+    #[cfg(target_os = "macos")]
+    {
+        app.run_on_main_thread(move || {
+            if let Err(err) = crate::apply_dock_icon(dark) {
+                eprintln!("切换应用图标失败：{err}");
+            }
+        })
+        .map_err(|err| err.to_string())?;
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
+        let _ = (app, dark);
+    }
+    Ok(())
+}
+
+/// 关闭主窗口时缩到状态栏（true）还是退出应用（false）
+#[tauri::command]
+pub fn set_close_to_tray(
+    tray: State<'_, crate::tray::TrayState>,
+    enabled: bool,
+) -> Result<(), String> {
+    tray.set_close_to_tray(enabled);
+    Ok(())
+}
+
+#[tauri::command]
+pub fn set_tray_enabled(
+    tray: State<'_, crate::tray::TrayState>,
+    enabled: bool,
+) -> Result<(), String> {
+    tray.set_enabled(enabled)
+}
+
 #[tauri::command]
 pub async fn set_bt_proxy(state: State<'_, AppState>, url: String) -> Result<BtProxySetting, String> {
     let value = state.manager.set_bt_proxy(&url)?;
