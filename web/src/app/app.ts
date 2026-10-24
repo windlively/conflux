@@ -6,6 +6,7 @@ import { onTrayAction } from './core/api';
 import { Icon } from './core/icon';
 import { TasksStore } from './core/tasks-store';
 import type { TrayAction } from './core/types';
+import { Updater } from './core/updater';
 import { UiState } from './core/ui-state';
 import { SettingsPage } from './settings/settings-page';
 import { Sidebar } from './sidebar/sidebar';
@@ -22,6 +23,7 @@ import { TaskList } from './tasks/task-list';
 export class App {
   protected readonly store = inject(TasksStore);
   protected readonly ui = inject(UiState);
+  protected readonly updater = inject(Updater);
 
   private readonly dialog = inject(MatDialog);
 

@@ -7,6 +7,7 @@ import { pickDirectory } from '../core/api';
 import { Icon, type IconName } from '../core/icon';
 import { ACCENTS, Settings, THEME_MODES, type ThemeMode } from '../core/settings';
 import { TasksStore } from '../core/tasks-store';
+import { Updater } from '../core/updater';
 import { UiState } from '../core/ui-state';
 
 /** 设置页：下载、网络、外观、系统、任务数据五组卡片，改动即时生效 */
@@ -21,6 +22,7 @@ export class SettingsPage {
   protected readonly settings = inject(Settings);
   protected readonly store = inject(TasksStore);
   protected readonly ui = inject(UiState);
+  protected readonly updater = inject(Updater);
 
   protected readonly accents = ACCENTS;
 
@@ -36,6 +38,16 @@ export class SettingsPage {
 
   /** 代理输入框的草稿：保存失败时保留用户输入，不把值回滚成旧的 */
   protected readonly proxyDraft = signal(this.settings.btProxy());
+  protected readonly showCliHelp = signal(false);
+
+  protected checkForUpdates() {
+    void this.updater.check(true);
+  }
+
+  protected onAutoUpdateChange(enabled: boolean) {
+    this.settings.setAutoUpdate(enabled);
+    if (enabled) void this.updater.check(false);
+  }
 
   protected async pickDir() {
     try {

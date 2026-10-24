@@ -275,6 +275,132 @@
     0 0 0 4px var(--dot);
 }
 
+/* ---------- 命令行使用说明 ---------- */
+
+.cli-help {
+  padding: 14px 16px 16px;
+  border-top: 1px solid var(--mat-sys-outline-variant);
+  background: var(--mat-sys-surface-container);
+  border-radius: var(--mat-sys-corner-medium);
+  margin-bottom: 14px;
+  font: var(--mat-sys-body-small);
+  color: var(--mat-sys-on-surface-variant);
+}
+
+.cli-help h4 {
+  margin: 0 0 4px;
+  font: var(--mat-sys-label-large);
+  color: var(--mat-sys-on-surface);
+}
+
+.cli-help h4:not(:first-child) {
+  margin-top: 14px;
+}
+
+.cli-help p {
+  margin: 0;
+  line-height: 1.6;
+}
+
+.cli-help code {
+  padding: 1px 4px;
+  border-radius: 4px;
+  background: var(--mat-sys-surface-container-high);
+  color: var(--mat-sys-on-surface);
+  font: 12px ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+}
+
+.cli-help pre {
+  margin: 6px 0 0;
+  padding: 12px;
+  overflow-x: auto;
+  border-radius: var(--mat-sys-corner-small);
+  background: var(--mat-sys-surface-container-lowest);
+  color: var(--mat-sys-on-surface);
+  font: 12px/1.65 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  scrollbar-width: none;
+}
+
+.cli-help pre::-webkit-scrollbar {
+  display: none;
+}
+
+.cli-help ul {
+  margin: 4px 0 0;
+  padding-left: 18px;
+  line-height: 1.65;
+}
+
+.cli-help li + li {
+  margin-top: 3px;
+}
+
+/* ---------- 更新 ---------- */
+
+.version-control {
+  gap: 12px;
+}
+
+.version {
+  font: var(--mat-sys-label-large);
+  font-variant-numeric: tabular-nums;
+  color: var(--mat-sys-on-surface);
+}
+
+.update-status {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 14px 0 16px;
+  border-top: 1px solid var(--mat-sys-outline-variant);
+  font: var(--mat-sys-body-small);
+  color: var(--mat-sys-on-surface-variant);
+}
+
+.update-error {
+  color: var(--mat-sys-error);
+}
+
+.update-head,
+.update-ready {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.update-head strong {
+  font: var(--mat-sys-title-small);
+  color: var(--mat-sys-on-surface);
+}
+
+.update-notes {
+  max-height: 160px;
+  overflow-y: auto;
+  padding-right: 4px;
+  line-height: 1.55;
+  white-space: pre-wrap;
+  scrollbar-width: none;
+}
+
+.update-notes::-webkit-scrollbar {
+  display: none;
+}
+
+.progress-track {
+  height: 6px;
+  overflow: hidden;
+  border-radius: var(--mat-sys-corner-full);
+  background: var(--mat-sys-surface-container-high);
+}
+
+.progress-track span {
+  display: block;
+  height: 100%;
+  background: var(--mat-sys-primary);
+  transition: width 0.2s cubic-bezier(0.2, 0, 0, 1);
+}
+
 /* ---------- 任务数据 ---------- */
 
 .chip {

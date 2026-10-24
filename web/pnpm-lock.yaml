@@ -30,14 +30,20 @@ dependencies:
     specifier: ^22.1.0
     version: 22.1.7(@angular/common@22.1.7)(@angular/core@22.1.7)(@angular/platform-browser@22.1.7)(rxjs@7.8.2)
   '@tauri-apps/api':
-    specifier: ^2.11.1
-    version: 2.11.1
+    specifier: ^2.12.4
+    version: 2.12.4
   '@tauri-apps/plugin-dialog':
     specifier: ^2.7.3
     version: 2.7.3
   '@tauri-apps/plugin-opener':
     specifier: ^2.5.5
     version: 2.5.5
+  '@tauri-apps/plugin-process':
+    specifier: ^2
+    version: 2.4.0
+  '@tauri-apps/plugin-updater':
+    specifier: ^2
+    version: 2.14.0
   rxjs:
     specifier: ~7.8.0
     version: 7.8.2
@@ -2082,20 +2088,32 @@ packages:
     resolution: {integrity: sha512-l2aFy5jALhniG5HgqrD6jXLi/rUWrKvqN/qJx6yoJsgKhblVd+iqqU4RCXavm/jPityDo5TCvKMnpjKnOriy0w==}
     dev: false
 
-  /@tauri-apps/api@2.11.1:
-    resolution: {integrity: sha512-M2FPuYND2m+wh5hfW9ZpSdxMPdEJovPBWwoHJmwUpysTYNHaOkVFN419m/K0LIgjb/7KU2vBgsUepJWugQCvAA==}
+  /@tauri-apps/api@2.12.4:
+    resolution: {integrity: sha512-pVmfis+4zT8H0Qhp3xPZx9Ju7kpzvA6rr/PSJPyuwfvucTQ8sVt61NYU9KMkK703UFlYadFmjKA4HhybOtN0gg==}
     dev: false
 
   /@tauri-apps/plugin-dialog@2.7.3:
     resolution: {integrity: sha512-CRgE+7TP4tvq9MjBU6f04NLTFIqVMLKHk3hAqlhil00ngK9ACTrXPH3oHpKMProxILodd3YjBoKbMwSI4IEcfA==}
     dependencies:
-      '@tauri-apps/api': 2.11.1
+      '@tauri-apps/api': 2.12.4
     dev: false
 
   /@tauri-apps/plugin-opener@2.5.5:
     resolution: {integrity: sha512-xvzGai5aQds8j8R8RsUK/lW6pGG50YgOYIPLzvkqmkwAj7dfySOD7sGtejRzvVdMmv1EQfKVEFh1MvmDp8QR0g==}
     dependencies:
-      '@tauri-apps/api': 2.11.1
+      '@tauri-apps/api': 2.12.4
+    dev: false
+
+  /@tauri-apps/plugin-process@2.4.0:
+    resolution: {integrity: sha512-GddrmsSLAYrLa/yTXlXK/YRDzUgYeeOnUXTbiyvJWkmI424RmDPD3FVLeqcon7rv6O6ZfhBilcrHWnSo7o6hIQ==}
+    dependencies:
+      '@tauri-apps/api': 2.12.4
+    dev: false
+
+  /@tauri-apps/plugin-updater@2.14.0:
+    resolution: {integrity: sha512-gdylJ9tger4hkyOn24QZd6MNOKVo2Eh53iw5th2Qj1vKTR/+u4PIwJWuiis5hohYvobn6iOvlnALfrqIPSzh7Q==}
+    dependencies:
+      '@tauri-apps/api': 2.12.4
     dev: false
 
   /@tybys/wasm-util@0.10.4:

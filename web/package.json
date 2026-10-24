@@ -1,6 +1,6 @@
 {
   "name": "conflux-web",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "scripts": {
     "ng": "ng",
     "dev": "ng serve",
@@ -20,9 +20,11 @@
     "@angular/material": "^22.1.7",
     "@angular/platform-browser": "^22.1.0",
     "@angular/router": "^22.1.0",
-    "@tauri-apps/api": "^2.11.1",
+    "@tauri-apps/api": "^2.12.4",
     "@tauri-apps/plugin-dialog": "^2.7.3",
     "@tauri-apps/plugin-opener": "^2.5.5",
+    "@tauri-apps/plugin-process": "^2",
+    "@tauri-apps/plugin-updater": "^2",
     "rxjs": "~7.8.0",
     "tslib": "^2.3.0"
   },

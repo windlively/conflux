@@ -59,7 +59,7 @@ export class NewTaskDialog {
 
   protected readonly urls = signal('');
   protected readonly dir = signal('');
-  protected readonly connections = signal(4);
+  protected readonly connections = signal(this.settings.taskConnections());
   protected readonly busy = signal(false);
   protected readonly previewing = signal(false);
   protected readonly error = signal<string | null>(null);
@@ -71,7 +71,6 @@ export class NewTaskDialog {
   private readonly selected = signal<ReadonlySet<number>>(new Set());
 
   constructor() {
-    this.connections.set(this.settings.taskConnections());
     const preferred = this.settings.downloadDir();
     if (preferred) {
       this.dir.set(preferred);

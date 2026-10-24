@@ -68,23 +68,20 @@
   </button>
 
   <div class="sidebar-nav">
-    <app-nav-section storageKey="tasks" title="任务管理" icon="checklist">
-      <nav class="filters">
-        @for (item of store.counts(); track item.key) {
-          <button
-            type="button"
-            class="filter"
-            [class.filter-active]="item.key === store.filter()"
-            (click)="openFilter(item.key)"
-          >
-            <app-icon [name]="item.icon" />
-            <span class="filter-label">{{ item.label }}</span>
-            <span class="filter-count">{{ item.count }}</span>
-          </button>
-        }
-      </nav>
-    </app-nav-section>
-
+    <nav class="filters">
+      @for (item of store.counts(); track item.key) {
+        <button
+          type="button"
+          class="filter"
+          [class.filter-active]="item.key === store.filter()"
+          (click)="openFilter(item.key)"
+        >
+          <app-icon [name]="item.icon" />
+          <span class="filter-label">{{ item.label }}</span>
+          <span class="filter-count">{{ item.count }}</span>
+        </button>
+      }
+    </nav>
   </div>
 
   @if (store.totalSpeed() > 0) {

@@ -17,6 +17,8 @@ pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
+        .plugin(tauri_plugin_updater::Builder::new().build())
+        .plugin(tauri_plugin_process::init())
         // 关窗行为：驻留开启时只隐藏窗口（下载与托盘菜单都还在）；关闭时直接退出。
         // macOS 上不驻留也要显式退出——不然窗口销毁后进程留在 Dock，托盘却再也唤不回来。
         .on_window_event(|window, event| {

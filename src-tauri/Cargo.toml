@@ -1,6 +1,6 @@
 [package]
 name = "conflux"
-version = "0.2.0"
+version = "0.2.1"
 description = "川流 Conflux —— 跨平台多协议下载工具"
 authors = ["you"]
 edition = "2021"
@@ -23,6 +23,8 @@ tauri-build = { version = "2", features = [] }
 # CLI 会认为这个特性是多余的、把它从这一行删掉（2026-09-19、09-23 各中过一次）
 tauri = { version = "2", features = ["macos-private-api", "tray-icon", "image-png"] }
 tauri-plugin-opener = "2"
+tauri-plugin-updater = "2"
+tauri-plugin-process = "2"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 # process／io-util 给 ed2k 侧车用：拉起子进程、按行读它的 stdout 协议

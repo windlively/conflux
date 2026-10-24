@@ -6,6 +6,14 @@
 
   <main class="content">
     <div class="content-inner">
+      @if (ui.view() === 'tasks' && updater.availableVersion(); as version) {
+        <div class="update-banner">
+          <app-icon name="update" />
+          <span>发现新版本 v{{ version }}</span>
+          <button matButton (click)="ui.showSettings()">去更新</button>
+        </div>
+      }
+
       @if (messageText(); as text) {
         <div class="message" animate.enter="message-in" animate.leave="message-out">
           {{ text }}

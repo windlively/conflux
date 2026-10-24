@@ -44,12 +44,17 @@ const KEY_THEME = 'conflux.theme';
 const KEY_TRAY = 'conflux.trayIcon';
 const KEY_CLOSE_TO_TRAY = 'conflux.closeToTray';
 const KEY_CLI = 'conflux.cli';
+const KEY_AUTO_UPDATE = 'conflux.autoUpdate';
 
-/** 单个任务的通道数上限，与 Rust 侧 Task::new / persist 的夹取保持一致 */
+/** 新任务默认开的连接数，和 Rust 侧 DownloadManager 的默认值保持一致 */
+export const DEFAULT_CONNECTIONS = 8;
+/** 单个任务的通道数硬上限，与 Rust 侧 Task::new / persist 的夹取保持一致 */
 export const TASK_CONNECTIONS_LIMIT = 32;
+/** 单任务上限的默认值；用户可以在设置里往上加 */
+export const DEFAULT_TASK_CONNECTIONS_LIMIT = 12;
 /** 全局上限的上限：3 个任务同时跑、每个开满单任务上限 */
 export const TOTAL_CONNECTIONS_LIMIT = TASK_CONNECTIONS_LIMIT * 3;
-/** 全局上限的默认值：等于默认情况下 3 个任务各开 4 条时的最大占用，开箱不额外限流 */
+/** 全局上限的默认值：够两个任务各开 8 条，再多的任务按通道排队 */
 export const DEFAULT_TOTAL_CONNECTIONS = 16;
 
 const clamp = (value: number, max = TASK_CONNECTIONS_LIMIT) =>
@@ -61,9 +66,13 @@ const darkQuery = window.matchMedia('(prefers-color-scheme: dark)');
 @Injectable({ providedIn: 'root' })
 export class Settings {
   readonly downloadDir = signal(localStorage.getItem(KEY_DIR) ?? '');
-  readonly connections = signal(clamp(Number(localStorage.getItem(KEY_CONNECTIONS)) || 4));
+  readonly connections = signal(
+    clamp(Number(localStorage.getItem(KEY_CONNECTIONS)) || DEFAULT_CONNECTIONS),
+  );
   readonly maxTaskConnections = signal(
-    clamp(Number(localStorage.getItem(KEY_MAX_TASK_CONNECTIONS)) || TASK_CONNECTIONS_LIMIT),
+    clamp(
+      Number(localStorage.getItem(KEY_MAX_TASK_CONNECTIONS)) || DEFAULT_TASK_CONNECTIONS_LIMIT,
+    ),
   );
   readonly maxTotalConnections = signal(
     clamp(
@@ -79,6 +88,8 @@ export class Settings {
   readonly closeToTray = signal(localStorage.getItem(KEY_CLOSE_TO_TRAY) !== '0');
   /** 是否允许本机 conflux-cli 提交任务；默认关闭 */
   readonly cliEnabled = signal(localStorage.getItem(KEY_CLI) === '1');
+  /** 启动时自动检查 GitHub Releases 更新；默认开启 */
+  readonly autoUpdate = signal(localStorage.getItem(KEY_AUTO_UPDATE) !== '0');
   readonly systemDark = signal(darkQuery.matches);
   /** BT 的 SOCKS5 代理；空串表示不用代理 */
   readonly btProxy = signal(localStorage.getItem(KEY_BT_PROXY) ?? '');
@@ -129,6 +140,7 @@ export class Settings {
       localStorage.setItem(KEY_CLI, enabled ? '1' : '0');
       void setCliEnabled(enabled).catch(() => undefined);
     });
+    effect(() => localStorage.setItem(KEY_AUTO_UPDATE, this.autoUpdate() ? '1' : '0'));
     // BT 代理存在后端内存里、建会话时生效；开局把本机保存的值推一次（空值推了也无妨）。
     // 这一步失败不提示：只有用户主动保存时，才需要把原因显示在设置里。
     void this.saveBtProxy(this.btProxy(), { report: false });
@@ -187,6 +199,10 @@ export class Settings {
 
   setCliEnabled(enabled: boolean) {
     this.cliEnabled.set(enabled);
+  }
+
+  setAutoUpdate(enabled: boolean) {
+    this.autoUpdate.set(enabled);
   }
 
   /**

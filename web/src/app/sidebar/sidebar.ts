@@ -7,12 +7,11 @@ import { Icon } from '../core/icon';
 import { TasksStore, type FilterKey } from '../core/tasks-store';
 import { UiState } from '../core/ui-state';
 import { openNewTaskDialog } from '../tasks/new-task-dialog';
-import { NavSection } from './nav-section';
 
 /** 侧边栏：新建任务、任务筛选与设置入口；具体设置在内容区的设置页里 */
 @Component({
   selector: 'app-sidebar',
-  imports: [Icon, MatButtonModule, NavSection],
+  imports: [Icon, MatButtonModule],
   templateUrl: './sidebar.html',
   styleUrl: './sidebar.scss',
   changeDetection: ChangeDetectionStrategy.OnPush,

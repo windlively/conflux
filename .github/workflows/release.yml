@@ -88,6 +88,8 @@ jobs:
         uses: tauri-apps/tauri-action@v0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ""
         with:
           tagName: ${{ env.RELEASE_TAG }}
           releaseName: ${{ env.RELEASE_TAG != '' && format('川流 Conflux {0}', env.RELEASE_TAG) || '' }}
@@ -98,6 +100,7 @@ jobs:
             - **macOS**：`.dmg`，Apple Silicon（arm64）。应用未签名／未公证，首次打开请右键 →「打开」，或到「系统设置 → 隐私与安全性」放行。
             - **Windows**：`-setup.exe`（NSIS 安装包，x64），内含 ed2k 侧车；需要系统已有 WebView2（Win10 1803 以上一般自带）。
             - ed2k 侧车与 `conflux-cli` 命令行客户端都会随安装包一起装上。
+            - 这一版起支持应用内自动更新；首个带更新器的版本需要手动安装，之后可在「设置 → 更新」检查。
 
             已知限制：BT 的公网 DHT／tracker 在部分网络下不可用（拿不到 peer、卡在「解析元数据」），可在设置里填 SOCKS5 代理走别的线路；未接做种，下载完即停。
           args: >-

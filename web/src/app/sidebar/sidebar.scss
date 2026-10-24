@@ -222,8 +222,7 @@ html[data-platform='windows'] .sidebar-fabs {
   cursor: pointer;
   transition:
     background-color 0.18s cubic-bezier(0.2, 0, 0, 1),
-    color 0.18s cubic-bezier(0.2, 0, 0, 1),
-    padding-left 0.18s cubic-bezier(0.2, 0, 0, 1);
+    color 0.18s cubic-bezier(0.2, 0, 0, 1);
 }
 
 .filter app-icon {
@@ -245,7 +244,6 @@ html[data-platform='windows'] .sidebar-fabs {
 
 .filter-active,
 .filter-active:hover {
-  padding-left: 18px;
   background: var(--mat-sys-secondary-container);
   color: var(--mat-sys-on-secondary-container);
   font-weight: 600;
@@ -261,8 +259,8 @@ html[data-platform='windows'] .sidebar-fabs {
   font-variant-numeric: tabular-nums;
 }
 
-/* 三个分组都展开、窗口又矮的时候：分组区自己滚动，
-   品牌行、「新建任务」与底部信息留在原位，不会被 flex 压缩 */
+/* 筛选多、窗口又矮的时候自己滚动，
+   品牌行、「新建任务」与设置入口留在原位，不会被 flex 压缩 */
 .sidebar-nav {
   flex: 1 1 auto;
   min-height: 0;
@@ -280,10 +278,6 @@ html[data-platform='windows'] .sidebar-fabs {
 /* 侧边栏是纵向 flex，子项默认允许收缩——内容一多就会把按钮和品牌行挤扁 */
 .sidebar > :not(.sidebar-nav) {
   flex-shrink: 0;
-}
-
-.spacer {
-  flex: 1;
 }
 
 /* ---------- 速度与存储 ---------- */

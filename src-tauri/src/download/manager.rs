@@ -22,7 +22,7 @@ const MAX_CONCURRENT_TASKS: usize = 3;
 /// 全局连接数上限：默认值与硬上限（三个任务各开满单任务上限就到顶）
 pub const DEFAULT_MAX_CONNECTIONS: usize = 16;
 pub const MAX_CONNECTIONS_LIMIT: usize = MAX_CONCURRENT_TASKS * MAX_TASK_CONNECTIONS;
-const DEFAULT_CONNECTIONS: usize = 4;
+const DEFAULT_CONNECTIONS: usize = 8;
 /// 预览磁力时的等待上限：磁力本身不含文件清单，得先从 peer 拿到元数据
 const PREVIEW_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(15);
 /// 搜 ed2k 的等待上限：要等服务器与 Kad 两边都回一轮

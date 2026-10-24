@@ -39,6 +39,26 @@ html:not([data-material]) .app {
     padding-left 0.28s cubic-bezier(0.32, 0.72, 0, 1);
 }
 
+.update-banner {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 8px 8px 12px;
+  border-radius: var(--mat-sys-corner-medium);
+  background: var(--mat-sys-primary-container);
+  color: var(--mat-sys-on-primary-container);
+  font: var(--mat-sys-body-small);
+}
+
+.update-banner app-icon {
+  --icon-size: 18px;
+}
+
+.update-banner button {
+  margin-left: auto;
+  color: var(--mat-sys-on-primary-container);
+}
+
 .message {
   display: flex;
   align-items: center;

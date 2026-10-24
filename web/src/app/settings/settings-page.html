@@ -2,7 +2,7 @@
   <header class="page-head">
     <div class="page-titles">
       <h1>设置</h1>
-      <p>下载、网络和外观都只保存在这台设备上。</p>
+      <p>下载、网络、外观和命令行等设置都只保存在这台设备上。</p>
     </div>
     <button matButton class="back" (click)="ui.showTasks()">
       <app-icon name="chevronLeft" />返回任务
@@ -208,6 +208,71 @@
 
   <section class="card">
     <header class="card-head">
+      <span class="card-icon"><app-icon name="update" /></span>
+      <div class="card-titles">
+        <h2>更新</h2>
+        <p>从 GitHub Releases 获取新版本。</p>
+      </div>
+    </header>
+
+    <div class="row">
+      <div class="about">
+        <span class="label">当前版本</span>
+        <small>更新包会下载到本机并替换当前应用。</small>
+      </div>
+      <div class="control version-control">
+        <span class="version">v{{ updater.currentVersion() ?? '—' }}</span>
+        <button matButton (click)="checkForUpdates()" [disabled]="updater.checking()">
+          {{ updater.checking() ? '检查中…' : '检查更新' }}
+        </button>
+      </div>
+    </div>
+
+    <div class="row">
+      <div class="about">
+        <span class="label">自动检查更新</span>
+        <small>启动时检查 GitHub Releases；发现新版本会在任务页提示，安装由你确认。</small>
+      </div>
+      <div class="control">
+        <mat-slide-toggle
+          aria-label="自动检查更新"
+          [checked]="settings.autoUpdate()"
+          (change)="onAutoUpdateChange($event.checked)"
+        />
+      </div>
+    </div>
+
+    @if (updater.error(); as error) {
+      <div class="update-status update-error">检查更新失败：{{ error }}</div>
+    } @else if (updater.readyToRestart()) {
+      <div class="update-status update-ready">
+        <span>更新已安装，重启后生效。</span>
+        <button matButton="filled" (click)="updater.restart()">立即重启</button>
+      </div>
+    } @else if (updater.installing()) {
+      <div class="update-status update-progress">
+        <div class="progress-track"><span [style.width.%]="updater.progress() ?? 0"></span></div>
+        <small>
+          {{ updater.progress() === null ? '正在下载更新…' : '正在下载更新 ' + updater.progress() + '%' }}
+        </small>
+      </div>
+    } @else if (updater.availableVersion(); as version) {
+      <div class="update-status update-available">
+        <div class="update-head">
+          <strong>发现新版本 v{{ version }}</strong>
+          <button matButton="filled" (click)="updater.install()">下载并安装</button>
+        </div>
+        @if (updater.notes(); as notes) {
+          <div class="update-notes">{{ notes }}</div>
+        }
+      </div>
+    } @else if (updater.checked()) {
+      <div class="update-status">已是最新版本。</div>
+    }
+  </section>
+
+  <section class="card">
+    <header class="card-head">
       <span class="card-icon"><app-icon name="terminal" /></span>
       <div class="card-titles">
         <h2>命令行</h2>
@@ -228,6 +293,50 @@
         />
       </div>
     </div>
+
+    <div class="row">
+      <div class="about">
+        <span class="label">使用说明</span>
+        <small>可执行文件位置、常用命令和退出码。</small>
+      </div>
+      <div class="control">
+        <button matButton (click)="showCliHelp.set(!showCliHelp())">
+          {{ showCliHelp() ? '收起' : '展开' }}
+          <app-icon [name]="showCliHelp() ? 'collapse' : 'expand'" />
+        </button>
+      </div>
+    </div>
+
+    @if (showCliHelp()) {
+      <div class="cli-help">
+        <h4>可执行文件</h4>
+        <p>
+          CLI 随安装包一起附带：macOS 在
+          <code>Conflux.app/Contents/MacOS/conflux-cli</code>，Windows 在安装目录下的
+          <code>conflux-cli.exe</code>。可以把它所在目录加进 <code>PATH</code>，下文直接用
+          <code>conflux-cli</code>。
+        </p>
+
+        <h4>常用命令</h4>
+        <pre>conflux-cli add "https://example.com/file.zip" --dir ~/Downloads -c 8 --wait
+conflux-cli add "magnet:?xt=urn:btih:..." --wait
+conflux-cli list --json
+conflux-cli status &lt;任务 id&gt; --json
+conflux-cli wait &lt;任务 id&gt; --json
+conflux-cli pause &lt;任务 id&gt;
+conflux-cli resume &lt;任务 id&gt;
+conflux-cli rm &lt;任务 id&gt;</pre>
+
+        <h4>说明</h4>
+        <ul>
+          <li>需要川流保持运行，并在上方开启「命令行工具」；关闭开关后 CLI 无法连接。</li>
+          <li>支持 http(s)、<code>magnet:</code>、本地 <code>.torrent</code> 和 <code>ed2k://</code> 链接。</li>
+          <li>任务会出现在应用的任务列表里，共用队列、连接数上限和断点续传。</li>
+          <li><code>--json</code> 输出机器可读结果；<code>wait</code> 完成返回 0，失败/取消返回 1。</li>
+          <li><code>rm --delete-file</code> 会删除本地文件，没有确认前不要加这个参数。</li>
+        </ul>
+      </div>
+    }
   </section>
 
   <section class="card">

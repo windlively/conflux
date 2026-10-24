@@ -20,6 +20,12 @@ conflux-cli list --json
 
 支持 http(s)、磁力、种子文件与 ed2k 链接。CLI 随安装包放在应用二进制旁边（macOS 是 `Conflux.app/Contents/MacOS/conflux-cli`，Windows 是安装目录下的 `conflux-cli.exe`），可以自己加进 PATH；开发时先 `cargo build --manifest-path cli/Cargo.toml`，再用 `cli/target/debug/conflux-cli`。完整的 Agent 使用说明见 `.qoder/skills/conflux-cli/SKILL.md`。
 
+## 自动更新
+
+安装版启动时会从 GitHub Releases 的 `latest.json` 检查新版本；「设置 → 更新」里可以手动检查，也可以关掉启动自动检查。更新包用 Tauri 签名校验，签名私钥只放在发布流水线的 `TAURI_SIGNING_PRIVATE_KEY` Actions secret 里。
+
+注意：首个带更新器的版本需要手动安装一次，之后才能自动升级；macOS 应用未签名／未公证，首次打开仍需在系统里放行。
+
 ## 测试与打包
 
 打包前先运行 `bash cli/build.sh` 生成 CLI 的 externalBin（CI 已自动执行）。
@@ -34,7 +40,7 @@ pnpm tauri build                           # 正式包（尚未配置签名）
 
 ```bash
 node tools/range-server.mjs --port 8787 --size 160 --throttle 400
-# 然后在应用里粘贴 http://127.0.0.1:8787/test.bin，连接数填 4
+# 然后在应用里粘贴 http://127.0.0.1:8787/test.bin，连接数填 8
 ```
 
 `--throttle` 是每连接限速（KB/s）。不限速时本机回环太快，界面来不及显示过程。
