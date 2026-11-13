@@ -15,7 +15,6 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          echo "== 当前用户 ==" && gh api user --jq .login
           echo "== 建草稿 =="
           if gh api -X POST "repos/${{ github.repository }}/releases" \
                -f tag_name=v0.3.0 -f name=perm-check -F draft=true > /tmp/rel.json 2>/tmp/rel.err; then
