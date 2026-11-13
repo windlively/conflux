@@ -66,6 +66,10 @@ export const setMaxConnections = (limit: number) =>
 export const setTrayEnabled = (enabled: boolean) =>
   invoke<void>('set_tray_enabled', { enabled });
 
+/** 状态栏图标旁要不要跟着显示当前总速度 */
+export const setTraySpeed = (enabled: boolean) =>
+  invoke<void>('set_tray_speed', { enabled });
+
 /** 让 Dock 图标跟随界面深浅色（macOS 的 .icns 不会自己切） */
 export const setAppIcon = (dark: boolean) => invoke<void>('set_app_icon', { dark });
 
@@ -102,6 +106,12 @@ export const onTaskRemoved = (handler: (id: string) => void): Promise<UnlistenFn
 export const revealInDir = async (path: string) => {
   const { revealItemInDir } = await import('@tauri-apps/plugin-opener');
   await revealItemInDir(path);
+};
+
+/** 用系统默认程序打开已下载的文件（需要 opener:allow-open-path 权限） */
+export const openFile = async (path: string) => {
+  const { openPath } = await import('@tauri-apps/plugin-opener');
+  await openPath(path);
 };
 
 /** 调用系统目录选择框；用户取消时返回 null */

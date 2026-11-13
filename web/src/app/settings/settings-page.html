@@ -188,6 +188,21 @@
 
     <div class="row" [class.row-muted]="!settings.trayIcon()">
       <div class="about">
+        <span class="label">状态栏显示速度</span>
+        <small>图标旁跟着显示当前总速度，写成 6.8M/s 这样；点开菜单后每条任务的速度不受影响。</small>
+      </div>
+      <div class="control">
+        <mat-slide-toggle
+          aria-label="状态栏显示速度"
+          [checked]="settings.traySpeed()"
+          [disabled]="!settings.trayIcon()"
+          (change)="settings.setTraySpeed($event.checked)"
+        />
+      </div>
+    </div>
+
+    <div class="row" [class.row-muted]="!settings.trayIcon()">
+      <div class="about">
         <span class="label">关窗驻留托盘</span>
         @if (settings.trayIcon()) {
           <small>开启后关闭窗口只是隐藏，下载在后台继续，从状态栏的「退出川流」才真正结束；关闭后关窗即退出应用。</small>

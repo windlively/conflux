@@ -7,6 +7,7 @@ import {
   setCloseToTray,
   setMaxConnections,
   setTrayEnabled,
+  setTraySpeed,
   setWindowTheme,
 } from './api';
 
@@ -42,6 +43,7 @@ const KEY_BT_PROXY = 'conflux.btProxy';
 const KEY_ACCENT = 'conflux.accent';
 const KEY_THEME = 'conflux.theme';
 const KEY_TRAY = 'conflux.trayIcon';
+const KEY_TRAY_SPEED = 'conflux.traySpeed';
 const KEY_CLOSE_TO_TRAY = 'conflux.closeToTray';
 const KEY_CLI = 'conflux.cli';
 const KEY_AUTO_UPDATE = 'conflux.autoUpdate';
@@ -84,6 +86,8 @@ export class Settings {
   readonly themeMode = signal<ThemeMode>(readStoredTheme());
   /** 是否在状态栏（macOS 菜单栏 / Windows 通知区域）显示图标；默认开启 */
   readonly trayIcon = signal(localStorage.getItem(KEY_TRAY) !== '0');
+  /** 状态栏图标旁是否跟着显示总速度；默认开启 */
+  readonly traySpeed = signal(localStorage.getItem(KEY_TRAY_SPEED) !== '0');
   /** 关闭主窗口时缩到状态栏继续下载；默认开启 */
   readonly closeToTray = signal(localStorage.getItem(KEY_CLOSE_TO_TRAY) !== '0');
   /** 是否允许本机 conflux-cli 提交任务；默认关闭 */
@@ -134,6 +138,12 @@ export class Settings {
       const enabled = this.closeToTray();
       localStorage.setItem(KEY_CLOSE_TO_TRAY, enabled ? '1' : '0');
       void setCloseToTray(enabled).catch(() => undefined);
+    });
+    // 菜单栏那串速度文字：同样由后端持有，开关一变就推过去
+    effect(() => {
+      const enabled = this.traySpeed();
+      localStorage.setItem(KEY_TRAY_SPEED, enabled ? '1' : '0');
+      void setTraySpeed(enabled).catch(() => undefined);
     });
     effect(() => {
       const enabled = this.cliEnabled();
@@ -191,6 +201,10 @@ export class Settings {
 
   setTrayIcon(enabled: boolean) {
     this.trayIcon.set(enabled);
+  }
+
+  setTraySpeed(enabled: boolean) {
+    this.traySpeed.set(enabled);
   }
 
   setCloseToTray(enabled: boolean) {

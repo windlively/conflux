@@ -6,6 +6,10 @@ import type { StorageInfo, TaskStatus, TaskView } from './types';
 
 export type FilterKey = 'all' | 'active' | 'paused' | 'completed' | 'failed';
 
+/** 进行中的任务：列表里始终置顶，与后端 list() 的排法保持一致 */
+const isActive = (status: TaskStatus) =>
+  status === 'queued' || status === 'probing' || status === 'downloading';
+
 interface FilterDef {
   key: FilterKey;
   label: string;
@@ -51,10 +55,10 @@ export class TasksStore {
 
   readonly visible = computed(() => {
     const key = this.filter();
-    if (key === 'all') return this.tasks();
-    const active = FILTERS.find((item) => item.key === key);
-    if (!active) return this.tasks();
-    return this.tasks().filter((task) => active.match(task.status));
+    const match = FILTERS.find((item) => item.key === key)?.match;
+    const base = !match || key === 'all' ? this.tasks() : this.tasks().filter((task) => match(task.status));
+    // 进行中的置顶；同组保持原有顺序（最新在前），Array.sort 是稳定排序
+    return [...base].sort((a, b) => Number(isActive(b.status)) - Number(isActive(a.status)));
   });
 
   readonly totalSpeed = computed(() =>
@@ -85,7 +89,7 @@ export class TasksStore {
   private upsert(view: TaskView) {
     this.tasks.update((list) => {
       const index = list.findIndex((task) => task.id === view.id);
-      if (index === -1) return [...list, view];
+      if (index === -1) return [view, ...list];
       const next = list.slice();
       next[index] = view;
       return next;

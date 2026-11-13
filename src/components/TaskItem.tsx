@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 
-import { cancelTask, pauseTask, removeTask, resumeTask, revealInDir } from '../api';
+import { cancelTask, openFile, pauseTask, removeTask, resumeTask, revealInDir } from '../api';
 import { formatBytes, formatDuration, formatRange, formatSpeed, percent } from '../format';
 import { CHANNEL_STATE_LABEL, TASK_STATUS_LABEL, type TaskView } from '../types';
 import { ProgressMatrix } from './ProgressMatrix';
@@ -54,6 +54,8 @@ export function TaskItem({ task, onError }: TaskItemProps) {
   const active = task.status === 'downloading' || task.status === 'probing' || task.status === 'queued';
   const resumable = task.status === 'paused' || task.status === 'failed' || task.status === 'cancelled';
   const hasFile = task.status === 'completed' || task.status === 'paused' || task.status === 'cancelled';
+  // 只有下载完成才是完整文件；暂停／取消留下的是 .part
+  const hasCompletedFile = task.status === 'completed' && task.savePath !== '';
   const hasChannels = task.channels.some((channel) => channel.segmentIndex !== null);
   // 矩阵按已有进度算，历史任务也能看；只探测出总大小时展开才有内容
   const hasMatrix = task.totalBytes > 0 && task.status !== 'probing';
@@ -128,6 +130,9 @@ export function TaskItem({ task, onError }: TaskItemProps) {
         {resumable && <Button onClick={() => run(() => resumeTask(task.id))}>继续</Button>}
         {active && (
           <Button onClick={() => run(() => cancelTask(task.id, false))}>取消</Button>
+        )}
+        {hasCompletedFile && (
+          <Button onClick={() => run(() => openFile(task.savePath))}>打开文件</Button>
         )}
         {hasFile && (
           <Button onClick={() => run(() => revealInDir(task.savePath))}>打开所在目录</Button>

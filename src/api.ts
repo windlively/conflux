@@ -36,6 +36,12 @@ export const revealInDir = async (path: string) => {
   await revealItemInDir(path);
 };
 
+/** 用系统默认程序打开已下载的文件（需要 opener:allow-open-path 权限） */
+export const openFile = async (path: string) => {
+  const { openPath } = await import('@tauri-apps/plugin-opener');
+  await openPath(path);
+};
+
 /** 调用系统目录选择框；用户取消时返回 null */
 export const pickDirectory = async (defaultPath: string) => {
   const { open } = await import('@tauri-apps/plugin-dialog');

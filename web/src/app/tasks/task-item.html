@@ -65,6 +65,9 @@
     @if (canPause()) {
       <button matButton (click)="cancel(item.id)"><app-icon name="stop" />取消</button>
     }
+    @if (hasCompletedFile()) {
+      <button matButton (click)="open(item.savePath)"><app-icon name="file" />打开文件</button>
+    }
     @if (hasFile()) {
       <button matButton (click)="reveal(item.savePath)"><app-icon name="folder" />打开所在目录</button>
     }
@@ -131,36 +134,67 @@
         <table class="channels">
           <thead>
             <tr>
-              <th>通道</th>
-              <th>当前分片</th>
-              <th class="col-progress">分片进度</th>
-              <th>速度</th>
-              <th>状态</th>
+              <th class="col-channel">通道</th>
+              <th
+                class="col-segment"
+                title="连接当前处理的分片；任务结束后这里停在各连接最后处理过的分片"
+              >
+                分片
+              </th>
+              <th class="col-progress">进度</th>
+              <th class="col-speed">速度</th>
+              <th class="col-state">状态</th>
             </tr>
           </thead>
           <tbody>
             @for (channel of channels(); track channel.id) {
-              <tr>
-                <td class="mono">{{ channel.label }}</td>
-                <td class="mono">{{ channel.segmentLabel }}</td>
-                <td>
-                  <app-segment-bar
-                    [grow]="channel.grow"
-                    [ratio]="channel.ratio"
-                    [state]="channel.state"
-                  />
-                  <span class="mono small">{{ channel.bytes }}</span>
+              <tr [title]="channel.hint">
+                <td class="col-channel">
+                  <span class="channel-dot" [attr.data-tone]="channel.tone"></span>
+                  <span class="channel-no">{{ channel.number }}</span>
                 </td>
-                <td class="mono">{{ channel.speed }}</td>
-                <td>
-                  <app-status-chip
-                    variant="channel"
-                    [state]="channel.state"
-                    [label]="channel.stateLabel"
-                    [spinner]="channel.spinner"
-                  />
-                  @if (channel.retries > 0) {
-                    <span class="retry">重试 {{ channel.retries }}</span>
+                <td class="cell-segment">
+                  @if (channel.segment) {
+                    <div class="segment-head">
+                      <span class="segment-no">{{ channel.segment }}</span>
+                      <span class="segment-range">{{ channel.range }}</span>
+                    </div>
+                    <div class="segment-track" [style.background-size]="channel.mapSize">
+                      <span
+                        class="segment-pin"
+                        [attr.data-tone]="channel.tone"
+                        [style.left.%]="channel.pin"
+                      ></span>
+                    </div>
+                  } @else {
+                    <span class="segment-empty">未领取分片</span>
+                  }
+                </td>
+                <td class="col-progress">
+                  <div class="progress-row">
+                    <app-segment-bar [grow]="1" [ratio]="channel.ratio" [state]="channel.state" />
+                    <span class="progress-bytes">{{ channel.bytes }}</span>
+                    <span class="progress-percent">{{ channel.percentLabel }}</span>
+                  </div>
+                </td>
+                <td class="col-speed" [title]="channel.speed">
+                  {{ channel.quietSpeed ? '—' : channel.speed }}
+                </td>
+                <td class="col-state">
+                  @if (channel.done) {
+                    <span class="state-quiet">
+                      <app-icon name="check" /><span class="state-text">完成</span>
+                    </span>
+                  } @else {
+                    <app-status-chip
+                      variant="channel"
+                      [state]="channel.state"
+                      [label]="channel.stateLabel"
+                      [spinner]="channel.spinner"
+                    />
+                    @if (channel.retries > 0) {
+                      <span class="retry">重试 {{ channel.retries }}</span>
+                    }
                   }
                 </td>
               </tr>

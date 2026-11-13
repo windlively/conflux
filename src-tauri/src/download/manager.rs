@@ -23,6 +23,14 @@ const MAX_CONCURRENT_TASKS: usize = 3;
 pub const DEFAULT_MAX_CONNECTIONS: usize = 16;
 pub const MAX_CONNECTIONS_LIMIT: usize = MAX_CONCURRENT_TASKS * MAX_TASK_CONNECTIONS;
 const DEFAULT_CONNECTIONS: usize = 8;
+
+/// 还在跑（或正要跑）的任务：界面与 CLI 列表里始终排在前面
+fn is_active(status: TaskStatus) -> bool {
+    matches!(
+        status,
+        TaskStatus::Queued | TaskStatus::Probing | TaskStatus::Downloading
+    )
+}
 /// 预览磁力时的等待上限：磁力本身不含文件清单，得先从 peer 拿到元数据
 const PREVIEW_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(15);
 /// 搜 ed2k 的等待上限：要等服务器与 Kad 两边都回一轮
@@ -183,12 +191,16 @@ impl DownloadManager {
     }
 
     pub fn list(&self) -> Vec<TaskView> {
-        self.tasks
+        let mut views: Vec<TaskView> = self
+            .tasks
             .lock()
             .unwrap()
             .iter()
             .map(|task| task.snapshot())
-            .collect()
+            .collect();
+        // 进行中的始终置顶，组内保持列表原有的「最新在前」顺序（稳定排序）
+        views.sort_by_key(|view| !is_active(view.status));
+        views
     }
 
     fn find(&self, id: &str) -> Option<Arc<Task>> {
@@ -368,7 +380,8 @@ impl DownloadManager {
             }
             task.set_only_files(indices);
         }
-        self.tasks.lock().unwrap().push(task.clone());
+        // 最新的任务排在列表最前面：界面与 conflux-cli list 都按这个顺序展示
+        self.tasks.lock().unwrap().insert(0, task.clone());
         self.emit(&task);
         self.persist(&task);
         self.start(&id)?;

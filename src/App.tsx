@@ -17,9 +17,13 @@ import { TaskItem } from './components/TaskItem';
 import { StyleModeContext, type StyleMode } from './style';
 import type { StorageInfo, TaskView } from './types';
 
+/** 进行中的任务：列表里始终置顶，与后端 list() 的排法一致 */
+const isActive = (status: TaskView['status']) =>
+  status === 'queued' || status === 'probing' || status === 'downloading';
+
 function upsert(list: TaskView[], view: TaskView): TaskView[] {
   const index = list.findIndex((task) => task.id === view.id);
-  if (index === -1) return [...list, view];
+  if (index === -1) return [view, ...list];
   const next = list.slice();
   next[index] = view;
   return next;
@@ -97,8 +101,9 @@ export default function App() {
 
   const visible = useMemo(() => {
     const active = FILTERS.find((item) => item.key === filter);
-    if (!active || filter === 'all') return tasks;
-    return tasks.filter((task) => active.match(task.status));
+    const base = !active || filter === 'all' ? tasks : tasks.filter((task) => active.match(task.status));
+    // 进行中的置顶；同组保持原有顺序（最新在前），Array.sort 是稳定排序
+    return [...base].sort((a, b) => Number(isActive(b.status)) - Number(isActive(a.status)));
   }, [tasks, filter]);
 
   const handleAdd = async () => {

@@ -1,21 +1,45 @@
 import { ChangeDetectionStrategy, Component, computed, inject, input, signal } from '@angular/core';
 import { MatButtonModule } from '@angular/material/button';
 
-import { cancelTask, pauseTask, removeTask, resumeTask, revealInDir, setTaskFiles } from '../core/api';
+import {
+  cancelTask,
+  openFile,
+  pauseTask,
+  removeTask,
+  resumeTask,
+  revealInDir,
+  setTaskFiles,
+} from '../core/api';
 import { formatBytes, formatDuration, formatRange, formatSpeed, percent } from '../core/format';
 import { Icon } from '../core/icon';
+import { stateTone } from '../core/tone';
 import {
   CHANNEL_STATE_LABEL,
   TASK_KIND_LABEL,
   TASK_STATUS_LABEL,
   type TaskView,
 } from '../core/types';
+
 import { UiState } from '../core/ui-state';
 import { ConfirmButton } from './confirm-button';
 import { FilePicker } from './file-picker';
 import { ProgressMatrix } from './progress-matrix';
 import { SegmentBar } from './segment-bar';
 import { StatusChip } from './status-chip';
+
+/** 同一单位时省掉前半段的单位：「39.6 – 49.5 MB」比「39.6 MB - 49.5 MB」好扫 */
+function compactRange(start: number, end: number): string {
+  const from = formatBytes(start).split(' ');
+  const to = formatBytes(end).split(' ');
+  return from[1] === to[1] ? `${from[0]} – ${to[0]} ${to[1]}` : `${from.join(' ')} – ${to.join(' ')}`;
+}
+
+/** 同理：「7.13 / 9.90 MB」 */
+function compactRatio(done: number, total: number): string {
+  const from = formatBytes(done).split(' ');
+  const to = formatBytes(total);
+  return from[1] === to.split(' ')[1] ? `${from[0]} / ${to}` : `${formatBytes(done)} / ${to}`;
+}
 
 /** 任务行：标题、分片条带、统计、操作按钮，展开后是通道路由表与下载矩阵 */
 @Component({
@@ -187,30 +211,56 @@ export class TaskItem {
     return status === 'completed' || status === 'paused' || status === 'cancelled';
   });
 
-  protected readonly channels = computed(() =>
-    this.task().channels.map((channel) => {
+  /** 只有下载完成才是一个完整文件；暂停／取消留下的是 .part，打不开 */
+  protected readonly hasCompletedFile = computed(
+    () => this.task().status === 'completed' && this.task().savePath !== '',
+  );
+
+  protected readonly channels = computed(() => {
+    const total = this.task().totalBytes;
+    const segCount = this.task().segments.length;
+    // 刻度点的间距：整份文件按分片数等分，每格中心一个点
+    const mapSize = segCount > 0 ? `${100 / segCount}% 100%` : null;
+    return this.task().channels.map((channel) => {
       const pct = percent(channel.segmentDownloaded, channel.segmentTotal);
+      const index = channel.segmentIndex;
+      const start = channel.segmentStart;
+      const length = channel.segmentTotal;
+      const live =
+        channel.state === 'connecting' ||
+        channel.state === 'downloading' ||
+        channel.state === 'retrying';
+      const range = index === null ? '' : compactRange(start, start + Math.max(0, length - 1));
       return {
         id: channel.id,
-        label: `#${channel.id + 1}`,
+        number: `${channel.id + 1}`,
+        tone: stateTone(channel.state),
         state: channel.state,
         stateLabel: CHANNEL_STATE_LABEL[channel.state],
         spinner: channel.state === 'connecting' || channel.state === 'retrying',
         retries: channel.retries,
-        segmentLabel:
-          channel.segmentIndex === null
-            ? '--'
-            : `#${channel.segmentIndex + 1} · ${formatRange(channel.segmentStart, channel.segmentEnd)}`,
+        done: channel.state === 'finished',
+        // 序号前的标记交给图标，这里只留数字
+        segment: index === null ? null : `${index + 1}`,
+        range,
+        // 分片中心的百分比位置：一个点就能说明「这条连接负责文件的哪一段」
+        pin: total > 0 && length > 0 ? ((start + length / 2) / total) * 100 : null,
+        mapSize,
         ratio: pct === null ? null : pct / 100,
-        grow: channel.segmentTotal || 1,
-        bytes:
-          channel.segmentTotal > 0
-            ? `${formatBytes(channel.segmentDownloaded)} / ${formatBytes(channel.segmentTotal)}`
-            : formatBytes(channel.segmentDownloaded),
+        // 单位只写一次：「7.13 / 9.90 MB」，给进度条省出宽度
+        bytes: length > 0 ? compactRatio(channel.segmentDownloaded, length) : formatBytes(channel.segmentDownloaded),
+        // 窄窗口里字节数让位给百分比，进度总得有个数字
+        percentLabel: pct === null ? '--' : `${Math.round(pct)}%`,
         speed: formatSpeed(channel.speedBps),
+        // 已完成或已停止的连接没有速度可言，整列 0 B/s 只是噪声
+        quietSpeed: channel.speedBps <= 0 && !live,
+        hint:
+          index === null
+            ? `通道 ${channel.id + 1} 还没领到分片`
+            : `通道 ${channel.id + 1} 最后处理的是分片 ${index + 1}（${range}）`,
       };
-    }),
-  );
+    });
+  });
 
   protected readonly hasChannels = computed(() =>
     this.task().channels.some((channel) => channel.segmentIndex !== null),
@@ -236,6 +286,8 @@ export class TaskItem {
   protected readonly cancel = (id: string) => this.run(() => cancelTask(id, false));
 
   protected readonly reveal = (path: string) => this.run(() => revealInDir(path));
+
+  protected readonly open = (path: string) => this.run(() => openFile(path));
 
   protected readonly remove = (id: string, deleteFile = false) =>
     this.run(() => removeTask(id, deleteFile));

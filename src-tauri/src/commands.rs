@@ -215,6 +215,15 @@ pub fn set_close_to_tray(
 }
 
 #[tauri::command]
+pub fn set_tray_speed(
+    tray: State<'_, crate::tray::TrayState>,
+    enabled: bool,
+) -> Result<(), String> {
+    tray.set_show_speed(enabled);
+    Ok(())
+}
+
+#[tauri::command]
 pub fn set_tray_enabled(
     tray: State<'_, crate::tray::TrayState>,
     enabled: bool,

@@ -221,7 +221,7 @@ impl Store {
                 "SELECT id, url, kind, dir, file_name, save_path, status, total_bytes, \
                  supports_range, probed, single_stream, connections, error, info_hash, magnet, \
                  torrent_path, only_files, created_at, updated_at \
-                 FROM tasks ORDER BY created_at, rowid",
+                 FROM tasks ORDER BY created_at DESC, rowid DESC",
             )
             .map_err(|err| format!("准备任务查询失败：{err}"))?;
         let rows = statement

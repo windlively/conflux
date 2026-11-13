@@ -104,6 +104,8 @@
   gap: 10px;
   padding-top: 12px;
   border-top: 1px solid var(--mat-sys-outline-variant);
+  /* 表格按可用宽度降级：窄窗口下先让速度列退场，进度条才不会被挤成一条线 */
+  container-type: inline-size;
 }
 
 .details-in {
@@ -162,36 +164,165 @@
   gap: 2px;
 }
 
+/* 通道表：一列一条连接，分片自带「在文件里的位置」，
+   所以通道号与分片号不必对得上也能读懂 */
 .channels {
   width: 100%;
+  table-layout: fixed;
   border-collapse: collapse;
   font: var(--mat-sys-body-small);
+  font-variant-numeric: tabular-nums;
 }
 
 .channels th {
+  padding: 2px 8px 7px;
   text-align: left;
+  font: var(--mat-sys-label-small);
   font-weight: 500;
+  letter-spacing: 0.03em;
   color: var(--mat-sys-on-surface-variant);
-  padding: 4px 8px;
-  border-bottom: 1px solid var(--mat-sys-outline-variant);
-}
-
-.channels tbody tr:hover {
-  background: var(--mat-sys-surface-container);
+  border-bottom: 1px solid color-mix(in srgb, var(--mat-sys-outline-variant) 70%, transparent);
+  white-space: nowrap;
 }
 
 .channels td {
-  padding: 7px 8px;
-  border-bottom: 1px solid var(--mat-sys-outline-variant);
+  padding: 5px 8px;
+  border-bottom: 1px solid color-mix(in srgb, var(--mat-sys-outline-variant) 55%, transparent);
   vertical-align: middle;
+}
+
+/* 首末列不留内缩，表格与卡片标题同一条左边缘 */
+.channels th:first-child,
+.channels td:first-child {
+  padding-left: 0;
+}
+
+.channels th:last-child,
+.channels td:last-child {
+  padding-right: 0;
+}
+
+.channels tbody tr {
+  transition: background-color 0.18s cubic-bezier(0.2, 0, 0, 1);
+}
+
+.channels tbody tr:hover {
+  background: var(--mat-sys-surface-container-high);
 }
 
 .channels tbody tr:last-child td {
   border-bottom: none;
 }
 
-.col-progress {
-  width: 42%;
+.col-channel {
+  width: 50px;
+  white-space: nowrap;
+}
+
+.channel-dot {
+  display: inline-block;
+  width: 5px;
+  height: 5px;
+  margin-right: 6px;
+  border-radius: 50%;
+  vertical-align: middle;
+  background: var(--mat-sys-outline);
+}
+
+.channel-dot[data-tone='green'] {
+  background: var(--matrix-done);
+}
+
+.channel-dot[data-tone='accent'] {
+  background: var(--mat-sys-primary);
+}
+
+.channel-dot[data-tone='orange'] {
+  background: var(--tone-orange);
+}
+
+.channel-dot[data-tone='red'] {
+  background: var(--mat-sys-error);
+}
+
+.channel-no {
+  font: var(--mat-sys-label-medium);
+  color: var(--mat-sys-on-surface-variant);
+}
+
+/* 分片列只放「第几片 + 它在文件里的位置」，宽度固定，把余量全给进度
+   表头与单元格的宽度必须在这里一起给：table-layout: fixed 只看第一行 */
+.col-segment,
+.cell-segment {
+  width: 132px;
+}
+
+.segment-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+/* 序号自己当锚点：比周围文字大一号、加重，不加容器也不加图形 */
+.segment-no {
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 1;
+  letter-spacing: 0.01em;
+  font-variant-numeric: tabular-nums;
+  color: var(--mat-sys-on-surface);
+}
+
+.segment-range {
+  font: var(--mat-sys-label-small);
+  color: var(--mat-sys-on-surface-variant);
+  white-space: nowrap;
+}
+
+/* 整份文件是一排刻度点，每片一个；亮起来的那颗就是这条连接负责的分片 */
+.segment-track {
+  position: relative;
+  height: 8px;
+  margin-top: 3px;
+  background-image: radial-gradient(
+    circle,
+    color-mix(in srgb, var(--mat-sys-on-surface) 26%, transparent) 1.4px,
+    transparent 1.6px
+  );
+  background-repeat: repeat-x;
+  background-position: 0 center;
+}
+
+.segment-pin {
+  position: absolute;
+  top: 50%;
+  width: 7px;
+  height: 7px;
+  margin-left: -3.5px;
+  transform: translateY(-50%);
+  border-radius: 50%;
+  background: var(--mat-sys-outline);
+}
+
+.segment-pin[data-tone='green'] {
+  background: var(--matrix-done);
+}
+
+.segment-pin[data-tone='accent'] {
+  background: var(--mat-sys-primary);
+}
+
+.segment-pin[data-tone='orange'] {
+  background: var(--tone-orange);
+}
+
+.segment-pin[data-tone='red'] {
+  background: var(--mat-sys-error);
+}
+
+.segment-empty {
+  font: var(--mat-sys-label-small);
+  color: var(--mat-sys-on-surface-variant);
 }
 
 .mono {
@@ -199,11 +330,82 @@
   font-variant-numeric: tabular-nums;
 }
 
-.small {
-  display: block;
-  margin-top: 3px;
-  font-size: 11px;
+.col-progress {
+  width: auto;
+}
+
+.progress-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.progress-row app-segment-bar {
+  flex: 1 1 48px;
+  min-width: 36px;
+}
+
+.progress-bytes {
+  flex: none;
+  text-align: right;
+  font: var(--mat-sys-label-small);
   color: var(--mat-sys-on-surface-variant);
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+
+.progress-percent {
+  display: none;
+  flex: none;
+  min-width: 34px;
+  text-align: right;
+  font: var(--mat-sys-label-small);
+  color: var(--mat-sys-on-surface-variant);
+  font-variant-numeric: tabular-nums;
+}
+
+@container (max-width: 620px) {
+  .col-speed {
+    display: none;
+  }
+}
+
+/* 再窄就把字节数换成百分比：数值可以简化，进度不能消失 */
+@container (max-width: 520px) {
+  .progress-bytes {
+    display: none;
+  }
+
+  .progress-percent {
+    display: inline;
+  }
+}
+
+.col-speed {
+  width: 68px;
+  text-align: right;
+  color: var(--mat-sys-on-surface-variant);
+  white-space: nowrap;
+}
+
+.col-state {
+  width: 72px;
+  text-align: right;
+  white-space: nowrap;
+}
+
+/* 完成是默认预期，不必每行都摆一块绿色徽标 */
+.state-quiet {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font: var(--mat-sys-label-small);
+  color: var(--tone-on-green-container);
+}
+
+.state-quiet app-icon {
+  --icon-size: 12px;
+  opacity: 0.85;
 }
 
 .retry {

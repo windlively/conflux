@@ -155,6 +155,7 @@ pub fn run() {
             commands::set_max_connections,
             commands::set_bt_proxy,
             commands::set_tray_enabled,
+            commands::set_tray_speed,
             commands::set_close_to_tray,
             commands::set_app_icon,
             commands::set_cli_enabled,
