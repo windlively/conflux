@@ -125,14 +125,8 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           notes="docs/releases/${RELEASE_TAG}.md"
-          body="$(mktemp)"
           if [ -f "$notes" ]; then
-            cat "$notes" >> "$body"
+            gh release edit "$RELEASE_TAG" --notes-file "$notes"
           else
-            echo "本版没有单独的更新说明。" >> "$body"
-            echo "::warning::没有找到 $notes，Release 正文只写安装说明"
+            echo "::warning::没有找到 $notes，Release 正文保持打包步骤的兜底文案"
           fi
-          # 更新内容在前，安装说明在后，中间一条分隔线
-          printf '\n---\n\n' >> "$body"
-          cat docs/releases/install.md >> "$body"
-          gh release edit "$RELEASE_TAG" --notes-file "$body"
