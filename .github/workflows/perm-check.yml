@@ -22,7 +22,7 @@ jobs:
           tag="v0.3.0"
           if [ "${{ github.ref_type }}" = "tag" ]; then tag="${GITHUB_REF_NAME}"; fi
           if gh api -X POST "repos/${{ github.repository }}/releases" \
-               -f tag_name="$tag" -f name="perm-check" -F draft=true > /tmp/rel.json 2>/tmp/rel.err; then
+               -f tag_name="$tag" -f name="perm-check" -F draft=false -f body="诊断正文" > /tmp/rel.json 2>/tmp/rel.err; then
             id=$(jq -r .id /tmp/rel.json)
             echo "CREATE_OK id=$id tag=$tag"
             gh api -X DELETE "repos/${{ github.repository }}/releases/$id" && echo "DELETED"
