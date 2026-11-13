@@ -94,15 +94,9 @@ jobs:
           tagName: ${{ env.RELEASE_TAG }}
           releaseName: ${{ env.RELEASE_TAG != '' && format('川流 Conflux {0}', env.RELEASE_TAG) || '' }}
           releaseDraft: false
+          # 只是兜底：真正的正文由后面的 notes 作业用 docs/releases/<tag>.md 覆盖
           releaseBody: |
-            川流 Conflux —— 跨平台多协议下载工具（HTTP/HTTPS、BT／磁力、ed2k 电驴）。
-
-            - **macOS**：`.dmg`，Apple Silicon（arm64）。应用未公证，首次打开请右键 →「打开」，或到「系统设置 → 隐私与安全性」放行；若仍提示「已损坏」，确认来源后执行 `sudo xattr -dr com.apple.quarantine /Applications/Conflux.app`。
-            - **Windows**：`-setup.exe`（NSIS 安装包，x64），内含 ed2k 侧车；需要系统已有 WebView2（Win10 1803 以上一般自带）。
-            - ed2k 侧车与 `conflux-cli` 命令行客户端都会随安装包一起装上。
-            - 这一版起支持应用内自动更新；首个带更新器的版本需要手动安装，之后可在「设置 → 更新」检查。
-
-            已知限制：BT 的公网 DHT／tracker 在部分网络下不可用（拿不到 peer、卡在「解析元数据」），可在设置里填 SOCKS5 代理走别的线路；未接做种，下载完即停。
+            本版更新内容见仓库 `docs/releases/${{ env.RELEASE_TAG }}.md`。
           args: >-
             --target ${{ matrix.target }}
             --bundles ${{ matrix.bundles }}
@@ -113,3 +107,32 @@ jobs:
           name: conflux-${{ matrix.target }}
           path: ${{ matrix.artifacts }}
           if-no-files-found: warn
+
+  # tauri-action 建 Release 时只能给一段写死的正文，而两个平台的作业会先后写同一个
+  # Release：谁后跑完谁把正文覆盖回去。所以等两边的产物都传完，单独用版本说明再写一次。
+  notes:
+    needs: build
+    # 手动触发且没填 tag 时不会建 Release，跳过
+    if: github.ref_type == 'tag' || inputs.tag != ''
+    runs-on: ubuntu-latest
+    env:
+      RELEASE_TAG: ${{ github.ref_type == 'tag' && github.ref_name || inputs.tag }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: 用本版更新内容覆盖 Release 正文
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          notes="docs/releases/${RELEASE_TAG}.md"
+          body="$(mktemp)"
+          if [ -f "$notes" ]; then
+            cat "$notes" >> "$body"
+          else
+            echo "本版没有单独的更新说明。" >> "$body"
+            echo "::warning::没有找到 $notes，Release 正文只写安装说明"
+          fi
+          # 更新内容在前，安装说明在后，中间一条分隔线
+          printf '\n---\n\n' >> "$body"
+          cat docs/releases/install.md >> "$body"
+          gh release edit "$RELEASE_TAG" --notes-file "$body"
