@@ -1,8 +1,11 @@
 name: perm-check
 
-# 临时诊断用：确认 GITHUB_TOKEN 能不能创建 Release。用完即删。
+# 临时诊断用：确认 GITHUB_TOKEN 在不同触发方式下能不能创建 Release。用完即删。
 on:
   workflow_dispatch:
+  push:
+    tags:
+      - 'diag-*'
 
 permissions:
   contents: write
@@ -11,15 +14,17 @@ jobs:
   check:
     runs-on: ubuntu-latest
     steps:
-      - name: 打印权限并试建草稿 Release
+      - name: 试建草稿 Release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          echo "== 建草稿 =="
+          echo "ref_type=${{ github.ref_type }} ref_name=${{ github.ref_name }}"
+          tag="v0.3.0"
+          if [ "${{ github.ref_type }}" = "tag" ]; then tag="${GITHUB_REF_NAME}"; fi
           if gh api -X POST "repos/${{ github.repository }}/releases" \
-               -f tag_name=v0.3.0 -f name=perm-check -F draft=true > /tmp/rel.json 2>/tmp/rel.err; then
+               -f tag_name="$tag" -f name="perm-check" -F draft=true > /tmp/rel.json 2>/tmp/rel.err; then
             id=$(jq -r .id /tmp/rel.json)
-            echo "CREATE_OK id=$id"
+            echo "CREATE_OK id=$id tag=$tag"
             gh api -X DELETE "repos/${{ github.repository }}/releases/$id" && echo "DELETED"
           else
             echo "CREATE_FAILED"
