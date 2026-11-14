@@ -3,6 +3,7 @@ import { getVersion } from '@tauri-apps/api/app';
 import { relaunch } from '@tauri-apps/plugin-process';
 import { check, type Update } from '@tauri-apps/plugin-updater';
 
+import { installUpdate, onUpdateProgress } from './api';
 import { Settings } from './settings';
 
 /** 从 GitHub Releases 检查并安装更新；开发态没有安装包，不自动检查 */
@@ -83,22 +84,24 @@ export class Updater {
     this.error.set(null);
     this.downloaded.set(0);
     this.totalBytes.set(null);
+
+    // 下载交给 Rust 侧按连接数分片，进度从 update:progress 事件回来；
+    // 事件订阅失败也不影响安装，只是没有进度条
+    const unlisten = await onUpdateProgress(({ downloaded, total }) => {
+      this.downloaded.set(downloaded);
+      this.totalBytes.set(total ?? null);
+    }).catch(() => null);
+
     try {
-      await update.downloadAndInstall((event) => {
-        if (event.event === 'Started') {
-          this.totalBytes.set(event.data.contentLength ?? null);
-        } else if (event.event === 'Progress') {
-          this.downloaded.update((value) => value + event.data.chunkLength);
-        } else if (event.event === 'Finished') {
-          this.readyToRestart.set(true);
-        }
-      });
+      await installUpdate(this.settings.updateConnections());
       this.readyToRestart.set(true);
-      // Windows 会由安装器接管退出；macOS 需要自己重启到新版本
+      void update.close().catch(() => undefined);
+      // Windows 上安装器接管后会直接退出进程；macOS 需要自己重启到新版本
       await this.restart();
     } catch (error) {
       this.error.set(String(error));
     } finally {
+      unlisten?.();
       this.installing.set(false);
     }
   }

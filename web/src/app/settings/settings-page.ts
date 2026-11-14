@@ -70,6 +70,10 @@ export class SettingsPage {
     this.settings.setMaxTotalConnections(this.settings.maxTotalConnections() + delta);
   }
 
+  protected stepUpdateConnections(delta: number) {
+    this.settings.setUpdateConnections(this.settings.updateConnections() + delta);
+  }
+
   protected onProxyInput(event: Event) {
     this.proxyDraft.set((event.target as HTMLInputElement).value);
   }

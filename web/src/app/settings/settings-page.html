@@ -233,7 +233,7 @@
     <div class="row">
       <div class="about">
         <span class="label">当前版本</span>
-        <small>更新包会下载到本机并替换当前应用。</small>
+        <small>更新包按下面的线程数分片并行下载，校验签名后再替换当前应用。</small>
       </div>
       <div class="control version-control">
         <span class="version">v{{ updater.currentVersion() ?? '—' }}</span>
@@ -254,6 +254,24 @@
           [checked]="settings.autoUpdate()"
           (change)="onAutoUpdateChange($event.checked)"
         />
+      </div>
+    </div>
+
+    <div class="row">
+      <div class="about">
+        <span class="label">更新下载线程数</span>
+        <small>
+          下载更新包时同时开几条连接。GitHub 单连接常常只有几十 KB/s，多开几条会明显快；上限 16。
+        </small>
+      </div>
+      <div class="control stepper">
+        <button matIconButton aria-label="减少更新下载线程数" (click)="stepUpdateConnections(-1)">
+          −
+        </button>
+        <span class="stepper-value">{{ settings.updateConnections() }}</span>
+        <button matIconButton aria-label="增加更新下载线程数" (click)="stepUpdateConnections(1)">
+          +
+        </button>
       </div>
     </div>
 

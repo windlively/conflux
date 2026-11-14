@@ -3,6 +3,7 @@ mod commands;
 pub mod download;
 pub mod store;
 mod tray;
+mod update;
 
 use std::sync::Arc;
 
@@ -159,6 +160,7 @@ pub fn run() {
             commands::set_close_to_tray,
             commands::set_app_icon,
             commands::set_cli_enabled,
+            update::install_update,
         ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application")

@@ -85,6 +85,18 @@ export const setCloseToTray = (enabled: boolean) =>
 export const onTrayAction = (handler: (action: TrayAction) => void): Promise<UnlistenFn> =>
   listen<TrayAction>('tray:action', (event) => handler(event.payload));
 
+/** 更新包的下载进度（Rust 侧按 200ms 推一次） */
+export const onUpdateProgress = (
+  handler: (payload: { downloaded: number; total: number | null }) => void,
+): Promise<UnlistenFn> =>
+  listen<{ downloaded: number; total: number | null }>('update:progress', (event) =>
+    handler(event.payload),
+  );
+
+/** 下载并安装更新：走多连接分片，连接数取设置里的「更新下载线程数」 */
+export const installUpdate = (connections: number) =>
+  invoke<void>('install_update', { connections });
+
 /** 设置 BT 的 SOCKS5 代理（peer 连接与 tracker 请求走它）；空串表示关闭代理 */
 export const setBtProxy = (url: string) => invoke<BtProxySetting>('set_bt_proxy', { url });
 
