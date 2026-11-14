@@ -276,7 +276,7 @@
     </div>
 
     @if (updater.error(); as error) {
-      <div class="update-status update-error">检查更新失败：{{ error }}</div>
+      <div class="update-status update-error">更新失败：{{ error }}</div>
     } @else if (updater.readyToRestart()) {
       <div class="update-status update-ready">
         <span>更新已安装，重启后生效。</span>
