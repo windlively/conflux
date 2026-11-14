@@ -1,6 +1,6 @@
 [package]
 name = "conflux"
-version = "0.3.0"
+version = "0.4.0"
 description = "川流 Conflux —— 跨平台多协议下载工具"
 authors = ["you"]
 edition = "2021"
