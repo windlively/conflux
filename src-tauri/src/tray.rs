@@ -36,6 +36,9 @@ const MAX_LABEL_CHARS: usize = 28;
 /// 这类结构变化不受限，立刻重画。
 const SPEED_REFRESH: Duration = Duration::from_millis(1_000);
 
+/// 36×36 的 2x 模板图，由 icons/tray/tray-template.svg 按矢量渲染：字形与应用
+/// 图标一致（双云轮廓 + 下载箭头），占位和描边对齐像素网格、并对 alpha 做增益，
+/// 让 18pt 下的笔画尽量实。tray-icon 会把高度压到 18pt，Retina 下 1:1 绘制。
 #[cfg(target_os = "macos")]
 const TRAY_ICON: &[u8] = include_bytes!("../icons/tray/tray-template.png");
 #[cfg(not(target_os = "macos"))]
